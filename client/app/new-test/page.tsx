@@ -12,11 +12,7 @@ import {
 type AuthType = "none" | "bearer" | "basic" | "apikey";
 type Step = 1 | 2 | 3;
 
-interface UploadedFile {
-  name: string;
-  size: number;
-  type: string;
-}
+// Removed UploadedFile interface as we need true File objects for uploading
 
 const SWAGGER_EXAMPLE = `openapi: 3.0.0
 info:
@@ -46,8 +42,8 @@ paths:
 
 function UploadZone({ label, accepts, acceptText, file, onFile, onRemove }: {
   label: string; accepts: string; acceptText: string;
-  file: UploadedFile | null;
-  onFile: (f: UploadedFile) => void;
+  file: File | null;
+  onFile: (f: File) => void;
   onRemove: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
@@ -57,12 +53,12 @@ function UploadZone({ label, accepts, acceptText, file, onFile, onRemove }: {
     e.preventDefault();
     setDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) onFile({ name: droppedFile.name, size: droppedFile.size, type: droppedFile.type });
+    if (droppedFile) onFile(droppedFile);
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) onFile({ name: f.name, size: f.size, type: f.type });
+    if (f) onFile(f);
   };
 
   const formatSize = (bytes: number) => {
@@ -110,10 +106,12 @@ function UploadZone({ label, accepts, acceptText, file, onFile, onRemove }: {
   );
 }
 
+import { startRun } from '@/lib/api'
+
 export default function NewTestPage() {
   const [step, setStep] = useState<Step>(1);
-  const [reqFile, setReqFile] = useState<UploadedFile | null>(null);
-  const [specFile, setSpecFile] = useState<UploadedFile | null>(null);
+  const [reqFile, setReqFile] = useState<File | null>(null);
+  const [specFile, setSpecFile] = useState<File | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [authType, setAuthType] = useState<AuthType>("none");
   const [bearerToken, setBearerToken] = useState("");
@@ -129,6 +127,7 @@ export default function NewTestPage() {
   const [selfHealing, setSelfHealing] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
   const { toast } = useToast();
   const router = useRouter();
 
@@ -136,11 +135,21 @@ export default function NewTestPage() {
   const canProceedStep2 = baseUrl.trim() !== "";
 
   const handleRun = async () => {
+    if (!reqFile || !specFile) {
+      setError("Please upload both files")
+      return
+    }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    setLoading(false);
-    toast("success", "Test run started! Redirecting to live view...");
-    setTimeout(() => router.push("/run/run-247"), 800);
+    setError("");
+    try {
+      const runId = await startRun(reqFile, specFile, baseUrl || "DEMO")
+      toast("success", "Test run started! Redirecting to live view...");
+      router.push(`/run/${runId}`)
+    } catch (e: any) {
+      setError(e.message || "Failed to start run")
+      toast("error", "Failed to start run")
+      setLoading(false)
+    }
   };
 
   const AGENT_STEPS = [
@@ -376,6 +385,11 @@ export default function NewTestPage() {
                     ))}
                   </div>
 
+                  {error && (
+                    <div className="text-red-500 font-medium text-sm text-center mb-2">
+                       ❌ {error}
+                    </div>
+                  )}
                   <button
                     onClick={handleRun}
                     disabled={loading}
