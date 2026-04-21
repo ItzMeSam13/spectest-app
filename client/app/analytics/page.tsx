@@ -6,7 +6,9 @@ import {
   collection, 
   query, 
   onSnapshot, 
-  Timestamp 
+  Timestamp,
+  orderBy,
+  limit
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Navbar } from "@/components/shared/Navbar";
@@ -18,11 +20,10 @@ import {
   TrendingUp,
   Zap,
   Target,
-  FileText
+  FileText,
+  ChevronRight
 } from "lucide-react";
 import { 
-  LineChart, 
-  Line, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -31,6 +32,18 @@ import {
   AreaChart,
   Area
 } from "recharts";
+
+// ─── Interfaces ──────────────────────────────────────────────────────────────
+
+interface TestResult {
+  endpoint: string;
+  method: string;
+  status: string;         // PASS | FAIL | HEALED
+  status_code: number;
+  details?: string;
+  technical_summary?: string;
+  failure_dynamics?: string;
+}
 
 interface TestRun {
   id: string;
@@ -42,9 +55,17 @@ interface TestRun {
   failed: number;
   healed: number;
   gaps: number;
-  coverage_percent?: number;
-  results?: Array<{ endpoint: string; status: string }>;
+  results?: TestResult[];
 }
+
+interface RiskItem {
+  endpoint: string;
+  count: number;
+  risk: string;
+  impact: 'High' | 'Medium' | 'Low';
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
   const [runs, setRuns] = useState<TestRun[]>([]);
@@ -52,7 +73,8 @@ export default function AnalyticsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const q = query(collection(db, "test_runs"));
+    // Fetch all runs for global aggregation
+    const q = query(collection(db, "test_runs"), orderBy("timestamp", "desc"));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const runData = snapshot.docs.map(doc => ({
@@ -60,89 +82,137 @@ export default function AnalyticsPage() {
         ...doc.data()
       })) as TestRun[];
       
-      // Sort for trend line
-      const sorted = [...runData].sort((a, b) => {
-        const timeA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : new Date(a.timestamp).getTime();
-        const timeB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : new Date(b.timestamp).getTime();
-        return timeA - timeB;
-      });
-
-      setRuns(sorted);
+      setRuns(runData);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Aggregated Metrics
+  // ─── Aggregation: Global Vitals ───────────────────────────────────────────
   const stats = useMemo(() => {
     if (runs.length === 0) return null;
 
-    const totalScore = runs.reduce((acc, run) => acc + run.spec_score, 0);
-    const totalGaps = runs.reduce((acc, run) => acc + run.gaps, 0);
-    const totalPassed = runs.reduce((acc, run) => acc + run.passed, 0);
-    const totalTests = runs.reduce((acc, run) => acc + run.total_tests, 0);
-    const totalHealed = runs.reduce((acc, run) => acc + run.healed, 0);
-    const totalFailed = runs.reduce((acc, run) => acc + run.failed, 0);
+    // Compute avg pass rate strictly: passed / total
+    const avgPassRate = runs.reduce((acc, run) => {
+      const total = run.total_tests || 1;
+      return acc + ((run.passed || 0) / total) * 100;
+    }, 0) / runs.length;
 
-    // Healing Rate: (Successful Heals / (Healed + Failed))
+    const totalGaps = runs.reduce((acc, run) => acc + (run.gaps || 0), 0);
+    const totalPassed = runs.reduce((acc, run) => acc + (run.passed || 0), 0);
+    const totalTests = runs.reduce((acc, run) => acc + (run.total_tests || 0), 0);
+    const totalHealed = runs.reduce((acc, run) => acc + (run.healed || 0), 0);
+    const totalFailed = runs.reduce((acc, run) => acc + (run.failed || 0), 0);
+
     const totalErrors = totalHealed + totalFailed;
     const healingRate = totalErrors > 0 ? (totalHealed / totalErrors) * 100 : 100;
-
-    // Reliability: (Passed / Total)
-    const reliability = totalTests > 0 ? (totalPassed / totalTests) * 100 : 0;
+    const reliability = totalTests > 0 ? ((totalPassed + totalHealed) / totalTests) * 100 : 0;
 
     return {
-      avgScore: Math.round(totalScore / runs.length),
+      avgScore: Math.round(avgPassRate),
       totalGaps,
       healingRate: Math.round(healingRate),
       reliability: Math.round(reliability),
       totalRuns: runs.length,
-      totalFiles: runs.length * 2 // BRD + Swagger
+      totalFiles: runs.length * 2
     };
   }, [runs]);
 
-  // Chart Data
+  // ─── Aggregation: Trend Line (Last 10 Missions) ───────────────────────────
   const chartData = useMemo(() => {
-    return runs.map(run => {
-      const date = run.timestamp instanceof Timestamp ? run.timestamp.toDate() : new Date(run.timestamp);
-      return {
-        name: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        score: run.spec_score
-      };
-    });
+    return [...runs]
+      .slice(0, 10)
+      .reverse() // Chronological order
+      .map(run => {
+        let dateLabel = "Unknown";
+        try {
+          if (run.timestamp instanceof Timestamp) {
+            dateLabel = run.timestamp.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+          } else if (run.timestamp?.seconds) {
+            dateLabel = new Date(run.timestamp.seconds * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+          } else if (run.timestamp) {
+            const d = new Date(run.timestamp);
+            if (!isNaN(d.getTime())) dateLabel = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+          }
+        } catch (e) {
+          dateLabel = run.run_id?.slice(0, 4) || "Run";
+        }
+
+        // Strict pass rate: (passed) / total * 100. 0 passes => 0%
+        const total = run.total_tests || 1;
+        const passRate = Math.round(((run.passed || 0) / total) * 100);
+
+        return {
+          name: dateLabel,
+          score: passRate,
+          details: `Run #${run.run_id?.slice(0, 8)}`
+        };
+      });
   }, [runs]);
 
-  // Risk Analysis (Mocking based on failed count per run as results array might be missing in some docs)
-  const topRisks = [
-    { endpoint: "POST /auth/login", impact: "High", risk: "Auth Bypass" },
-    { endpoint: "PUT /users/{id}", impact: "Medium", risk: "Schema Drift" },
-    { endpoint: "DELETE /orders/{id}", impact: "High", risk: "Missing Logic" }
-  ];
+  // ─── Aggregation: Top Service Risks ──────────────────────────────────────
+  const topRisks = useMemo(() => {
+    const failureMap: Record<string, { count: number; detail: string; method: string }> = {};
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0A0E1A" }}>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-          <p style={{ color: "#00D4FF" }}>Aggregating Mission Data...</p>
-        </div>
+    runs.forEach(run => {
+      const results = run.results || [];
+      results.forEach(res => {
+        if (res.status === "FAIL" || (res.status_code && res.status_code >= 400)) {
+          const key = `${res.method} ${res.endpoint}`;
+          if (!failureMap[key]) {
+            failureMap[key] = { count: 0, detail: res.details || "Unknown Error", method: res.method };
+          }
+          failureMap[key].count += 1;
+          // Keep most recent or most detailed error
+          if (res.details && res.details.length > failureMap[key].detail.length) {
+            failureMap[key].detail = res.details;
+          }
+        }
+      });
+    });
+
+    return Object.entries(failureMap)
+      .map(([endpoint, data]) => {
+        let impact: 'High' | 'Medium' | 'Low' = 'Low';
+        if (data.count >= 5) impact = 'High';
+        else if (data.count >= 3) impact = 'Medium';
+
+        return {
+          endpoint,
+          count: data.count,
+          risk: data.detail.slice(0, 40) + (data.detail.length > 40 ? "..." : ""),
+          impact
+        } as RiskItem;
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [runs]);
+
+  // ─── Render Helpers ────────────────────────────────────────────────────────
+
+  const SkeletonCard = () => (
+    <div className="flex items-center justify-between p-3 rounded-xl animate-pulse" style={{ background: "#0A0E1A", border: "1px solid #1E2D4A" }}>
+      <div className="space-y-2 flex-1">
+        <div className="h-3 w-1/2 bg-[#1E2D4A] rounded" />
+        <div className="h-2 w-1/3 bg-[#141D35] rounded" />
       </div>
-    );
-  }
+      <div className="h-4 w-12 bg-[#1E2D4A] rounded ml-4" />
+    </div>
+  );
 
   return (
-    <div className="min-h-screen" style={{ background: "#0A0E1A" }}>
+    <div className="min-h-screen" style={{ background: "#0A0E1A", fontFamily: "var(--font-dm-sans), sans-serif" }}>
       <Navbar />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12">
         <div className="mb-10">
-          <h1 className="text-3xl font-bold mb-2 uppercase tracking-tighter" style={{ color: "#E8EEFF" }}>
+          <h1 className="text-3xl font-extrabold mb-2 uppercase tracking-tighter" style={{ color: "#E8EEFF" }}>
             Operational Intelligence
           </h1>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-            <p style={{ color: "#7B8DB0" }}>Real-time telemetry from latest API audits.</p>
+            <p style={{ color: "#7B8DB0", fontSize: "14px" }}>Dynamic telemetry aggregated from {runs.length} test missions.</p>
           </div>
         </div>
 
@@ -166,7 +236,7 @@ export default function AnalyticsPage() {
               <div className="text-4xl font-black mb-1" style={{ color: "#E8EEFF" }}>{s.value}</div>
               <div className="flex items-center gap-1 text-[10px]" style={{ color: "#7B8DB0" }}>
                 <TrendingUp size={10} /> 
-                <span>LIVE UPDATING FROM FIRESTORE</span>
+                <span className="uppercase font-bold">Live Context</span>
               </div>
             </div>
           ))}
@@ -176,7 +246,7 @@ export default function AnalyticsPage() {
           
           {/* Trend Chart */}
           <div 
-            className="lg:col-span-2 rounded-2xl p-6 border"
+            className="lg:col-span-2 rounded-2xl p-7 border"
             style={{ background: "#141D35", borderColor: "#1E2D4A" }}
           >
             <div className="flex justify-between items-center mb-8">
@@ -184,8 +254,8 @@ export default function AnalyticsPage() {
                 <Activity size={20} style={{ color: "#00D4FF" }} />
                 API HEALTH TREND
               </h3>
-              <div className="text-xs px-3 py-1 rounded-full" style={{ background: "rgba(0, 212, 255, 0.1)", color: "#00D4FF", border: "1px solid #00D4FF30" }}>
-                LAST {runs.length} MISSIONS
+              <div className="text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full" style={{ background: "rgba(0, 212, 255, 0.1)", color: "#00D4FF", border: "1px solid #00D4FF30" }}>
+                PASS RATE %
               </div>
             </div>
             
@@ -194,7 +264,7 @@ export default function AnalyticsPage() {
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00D4FF" stopOpacity={0.3}/>
+                      <stop offset="5%" stopColor="#00D4FF" stopOpacity={0.4}/>
                       <stop offset="95%" stopColor="#00D4FF" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
@@ -205,6 +275,7 @@ export default function AnalyticsPage() {
                     fontSize={10} 
                     tickLine={false} 
                     axisLine={false}
+                    tick={{ fill: '#4A5A78' }}
                   />
                   <YAxis 
                     stroke="#4A5A78" 
@@ -212,10 +283,28 @@ export default function AnalyticsPage() {
                     tickLine={false} 
                     axisLine={false} 
                     domain={[0, 100]}
+                    tick={{ fill: '#4A5A78' }}
+                    tickFormatter={(v) => `${v}%`}
                   />
                   <RechartsTooltip 
-                    contentStyle={{ background: "#0F1629", border: "1px solid #1E2D4A", borderRadius: "8px", fontSize: "12px" }}
-                    itemStyle={{ color: "#00D4FF" }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const p = payload[0].payload;
+                      const scoreVal = p.score as number;
+                      const col = scoreVal >= 80 ? "#00E396" : scoreVal >= 50 ? "#FFB547" : "#FF4560";
+                      return (
+                        <div style={{ background: "#0A1020", border: "1px solid #1E2D4A", borderRadius: 12, padding: "12px 16px", minWidth: 170, boxShadow: "0 10px 25px rgba(0,0,0,0.5)" }}>
+                          <div style={{ color: "#7B8DB0", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", marginBottom: 8 }}>{label}</div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 6 }}>
+                            <span style={{ fontSize: 28, fontWeight: 900, color: col }}>{scoreVal}%</span>
+                            <span style={{ fontSize: 11, color: "#7B8DB0" }}>Pass Rate</span>
+                          </div>
+                          <div style={{ fontSize: 10, color: "#4A5A78", fontFamily: "JetBrains Mono, monospace", borderTop: "1px solid #1E2D4A", paddingTop: 6 }}>
+                            {p.details}
+                          </div>
+                        </div>
+                      );
+                    }}
                   />
                   <Area 
                     type="monotone" 
@@ -224,7 +313,8 @@ export default function AnalyticsPage() {
                     strokeWidth={3}
                     fillOpacity={1} 
                     fill="url(#colorScore)" 
-                    animationDuration={2000}
+                    animationDuration={2500}
+                    activeDot={{ r: 7, stroke: '#00D4FF', strokeWidth: 2, fill: '#0A0E1A' }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -236,39 +326,70 @@ export default function AnalyticsPage() {
             
             {/* Top Risks */}
             <div 
-              className="rounded-2xl p-6 border"
+              className="rounded-2xl p-7 border"
               style={{ background: "#141D35", borderColor: "#1E2D4A" }}
             >
-              <h3 className="text-md font-bold mb-6 flex items-center gap-2" style={{ color: "#E8EEFF" }}>
-                <Target size={18} style={{ color: "#FF4560" }} />
-                TOP SERVICE RISKS
-              </h3>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-md font-bold flex items-center gap-2" style={{ color: "#E8EEFF" }}>
+                  <Target size={18} style={{ color: "#FF4560" }} />
+                  TOP SERVICE RISKS
+                </h3>
+                {topRisks.length > 0 && (
+                  <span className="text-[10px] text-[#7B8DB0] font-bold uppercase">{topRisks.length} Identifiers</span>
+                )}
+              </div>
+              
               <div className="space-y-4">
-                {topRisks.map((risk, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 rounded-xl" style={{ background: "#0A0E1A", border: "1px solid #1E2D4A" }}>
-                    <div>
-                      <div className="text-xs font-bold" style={{ color: "#E8EEFF" }}>{risk.endpoint}</div>
-                      <div className="text-[10px]" style={{ color: "#7B8DB0" }}>{risk.risk}</div>
-                    </div>
-                    <div className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: risk.impact === 'High' ? 'rgba(255, 69, 96, 0.1)' : 'rgba(255, 181, 71, 0.1)', color: risk.impact === 'High' ? '#FF4560' : '#FFB547' }}>
-                      {risk.impact}
-                    </div>
+                {loading ? (
+                  <>
+                    <SkeletonCard />
+                    <SkeletonCard />
+                    <SkeletonCard />
+                  </>
+                ) : topRisks.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p style={{ color: "#4A5A78", fontSize: "12px" }}>No significant service risks detected across missions.</p>
                   </div>
-                ))}
+                ) : (
+                  topRisks.map((risk, index) => (
+                    <div key={index} className="flex items-center justify-between p-3.5 rounded-xl transition-all hover:scale-[1.02]" style={{ background: "#0D1425", border: "1px solid #1E2D4A" }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate mb-1" style={{ color: "#00D4FF" }}>{risk.endpoint}</div>
+                        <div className="text-[10px] truncate" style={{ color: "#7B8DB0" }}>{risk.risk}</div>
+                      </div>
+                      <div className="ml-3 flex flex-col items-end">
+                        <div 
+                          className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-tighter" 
+                          style={{ 
+                            background: risk.impact === 'High' ? 'rgba(255, 69, 96, 0.15)' : risk.impact === 'Medium' ? 'rgba(255, 181, 71, 0.15)' : 'rgba(0, 212, 255, 0.15)', 
+                            color: risk.impact === 'High' ? '#FF4560' : risk.impact === 'Medium' ? '#FFB547' : '#00D4FF',
+                            border: `1px solid ${risk.impact === 'High' ? '#FF456040' : risk.impact === 'Medium' ? '#FFB54740' : '#00D4FF40'}`
+                          }}
+                        >
+                          {risk.impact}
+                        </div>
+                        <span className="text-[9px] mt-1 font-bold" style={{ color: "#4A5A78" }}>{risk.count} Failures</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
             {/* Total Data Processed */}
             <div 
-              className="rounded-2xl p-6 border flex flex-col items-center text-center"
+              className="rounded-2xl p-7 border flex flex-col items-center text-center relative overflow-hidden group"
               style={{ background: "#141D35", borderColor: "#1E2D4A" }}
             >
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: "rgba(123, 97, 255, 0.1)" }}>
-                <FileText size={28} style={{ color: "#7B61FF" }} />
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                <FileText size={80} color="#7B61FF" />
               </div>
-              <div className="text-3xl font-black" style={{ color: "#E8EEFF" }}>{stats?.totalFiles || 0}</div>
-              <div className="text-[11px] uppercase font-bold tracking-widest mt-1" style={{ color: "#4A5A78" }}>Documents Audited</div>
-              <div className="mt-4 text-[10px]" style={{ color: "#7B8DB0" }}>RAG Pipeline utilized across all test runs.</div>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 rotate-3 group-hover:rotate-0 transition-transform" style={{ background: "rgba(123, 97, 255, 0.15)", border: "1px solid rgba(123, 97, 255, 0.3)" }}>
+                <FileText size={32} style={{ color: "#7B61FF" }} />
+              </div>
+              <div className="text-4xl font-black" style={{ color: "#E8EEFF" }}>{stats?.totalFiles || 0}</div>
+              <div className="text-[11px] uppercase font-bold tracking-[0.2em] mt-2 mb-4" style={{ color: "#4A5A78" }}>Documents Audited</div>
+              <p className="text-[10px] leading-relaxed" style={{ color: "#7B8DB0" }}>Spec-First validation engine successfully processed business requirements and API schemas.</p>
             </div>
 
           </div>
@@ -278,12 +399,12 @@ export default function AnalyticsPage() {
 
       <style jsx>{`
         @keyframes glow {
-          0% { box-shadow: 0 0 5px rgba(0, 212, 255, 0.2); }
-          50% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.4); }
-          100% { box-shadow: 0 0 5px rgba(0, 212, 255, 0.2); }
+          0% { box-shadow: 0 0 5px rgba(0, 212, 255, 0.1); }
+          50% { box-shadow: 0 0 25px rgba(0, 212, 255, 0.25); }
+          100% { box-shadow: 0 0 5px rgba(0, 212, 255, 0.1); }
         }
         .animate-glow {
-          animation: glow 3s infinite;
+          animation: glow 4s infinite;
         }
       `}</style>
     </div>

@@ -130,22 +130,27 @@ async def stream_test_run(run_id: str):
                 requirements_covered=len(plan)
             )
             
-            # Create final report payload for frontend to persist (Workaround for local ADC issues)
-            # We don't save here because the backend lacks Service Account credentials
+            # Create final report payload for frontend to persist
+            # Enrich results with technical metadata before sending
+            enriched_results = await reporter.enrich_results(test_results)
             recommendations = await reporter.generate_recommendations(report_data)
+            score = reporter.calculate_spec_score(report_data)
+            tabs = reporter.build_tab_payload(enriched_results, [], recommendations, score)
+
             final_payload = {
                 "run_id": run_id,
-                "spec_score": reporter.calculate_spec_score(report_data),
-                "total_tests": len(test_results),
-                "passed": sum(1 for r in test_results if r.status == "PASS"),
-                "failed": sum(1 for r in test_results if r.status == "FAIL"),
-                "healed": sum(1 for r in test_results if r.status == "HEALED"),
-                "gaps": 0, # TODO
-                "results": [r.dict() for r in test_results],
+                "spec_score": score,
+                "total_tests": len(enriched_results),
+                "passed": sum(1 for r in enriched_results if r.status == "PASS"),
+                "failed": sum(1 for r in enriched_results if r.status == "FAIL"),
+                "healed": sum(1 for r in enriched_results if r.status == "HEALED"),
+                "gaps": 0,
+                "results": [r.dict() for r in enriched_results],
                 "recommendations": recommendations,
+                "tabs": tabs,
                 "timestamp": {"seconds": int(datetime.now().timestamp())}
             }
-            
+
             yield f"data: {json.dumps({'level': 'FINAL_REPORT', 'data': final_payload})}\n\n"
             
             report_path = f"reports/audit_{run_id}.pdf"

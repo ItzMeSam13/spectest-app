@@ -68,9 +68,9 @@ export default function HistoryPage() {
     });
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return { main: "#00E396", bg: "rgba(0, 227, 150, 0.1)" };
-    if (score >= 50) return { main: "#FFB547", bg: "rgba(255, 181, 71, 0.1)" };
+  const getScoreColor = (passRate: number) => {
+    if (passRate >= 80) return { main: "#00E396", bg: "rgba(0, 227, 150, 0.1)" };
+    if (passRate >= 50) return { main: "#FFB547", bg: "rgba(255, 181, 71, 0.1)" };
     return { main: "#FF4560", bg: "rgba(255, 69, 96, 0.1)" };
   };
 
@@ -150,7 +150,8 @@ export default function HistoryPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {runs.map((run) => {
-              const colors = getScoreColor(run.spec_score);
+              const passRate = Math.round(((run.passed || 0) / (run.total_tests || 1)) * 100);
+              const colors = getScoreColor(passRate);
               return (
                 <div 
                   key={run.id}
@@ -194,34 +195,58 @@ export default function HistoryPage() {
                         border: `1px solid ${colors.main}30`
                       }}
                     >
-                      {run.spec_score}
+                      {passRate}%
                     </div>
                   </div>
 
-                  <div className="space-y-4 mb-6">
-                    <div className="flex items-center gap-2 text-sm" style={{ color: "#7B8DB0" }}>
-                      <Clock size={14} />
+                  <div className="space-y-4 mb-5">
+                    <div className="flex items-center gap-2 text-xs" style={{ color: "#7B8DB0" }}>
+                      <Clock size={13} />
                       {formatDate(run.timestamp)}
                     </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs" style={{ color: "#4A5A78" }}>
-                        Pass Rate: <span style={{ color: "#00E396" }}>{Math.round((run.passed / (run.total_tests || 1)) * 100)}%</span>
+
+                    {/* Pass Rate Progress Bar */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span style={{ color: "#4A5A78", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em" }}>PASS RATE</span>
+                        <span style={{ color: colors.main, fontSize: 12, fontWeight: 800 }}>{passRate}%</span>
                       </div>
-                      <div className="text-xs" style={{ color: "#4A5A78" }}>
-                        Endpoints: <span style={{ color: "#E8EEFF" }}>{run.total_tests}</span>
+                      <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "#0A0E1A" }}>
+                        <div 
+                          className="h-full transition-all duration-1000"
+                          style={{ width: `${passRate}%`, background: colors.main, boxShadow: `0 0 8px ${colors.main}` }}
+                        />
                       </div>
                     </div>
-                    
-                    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "#0A0E1A" }}>
-                      <div 
-                        className="h-full transition-all duration-1000"
-                        style={{ 
-                          width: `${(run.passed / (run.total_tests || 1)) * 100}%`,
-                          background: colors.main,
-                          boxShadow: `0 0 10px ${colors.main}`
-                        }}
-                      />
+
+                    {/* Stat Grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>
+                      {[
+                        { label: "Passed", value: run.passed ?? 0, color: "#00E396" },
+                        { label: "Failed", value: run.failed ?? 0, color: "#FF4560" },
+                        { label: "Healed", value: run.healed ?? 0, color: "#FFB547" },
+                      ].map(s => (
+                        <div key={s.label} style={{ background: "#0A0E1A", borderRadius: 8, padding: "8px", textAlign: "center" }}>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: s.color }}>{s.value}</div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: "#4A5A78", letterSpacing: "0.1em" }}>{s.label.toUpperCase()}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Healing Rate & Security Badge */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontSize: 11, color: "#7B8DB0" }}>
+                        Healing Rate: <span style={{ color: "#FFB547", fontWeight: 700 }}>
+                          {run.healed > 0 ? `${Math.round((run.healed / ((run.failed ?? 0) + run.healed)) * 100)}%` : "0%"}
+                        </span>
+                      </div>
+                      <div style={{
+                        fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 20,
+                        background: passRate >= 80 ? "rgba(0,227,150,0.1)" : passRate >= 50 ? "rgba(255,181,71,0.1)" : "rgba(255,69,96,0.1)",
+                        color: colors.main, border: `1px solid ${colors.main}40`, letterSpacing: "0.1em"
+                      }}>
+                        {passRate >= 80 ? "LOW RISK" : passRate >= 50 ? "MEDIUM RISK" : "HIGH RISK"}
+                      </div>
                     </div>
                   </div>
 

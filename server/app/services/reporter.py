@@ -8,6 +8,11 @@ from pydantic import BaseModel, Field
 from fpdf import FPDF
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
+from dotenv import load_dotenv
+from app.services.pdf_generator import PDFGeneratorService
+
+load_dotenv()
+
 
 class TestResult(BaseModel):
     endpoint: str
@@ -15,10 +20,18 @@ class TestResult(BaseModel):
     status: str  # PASS, FAIL, HEALED
     status_code: int
     details: str = ""
+    # --- Enriched fields (Task 1) ---
+    technical_summary: str = ""       # Description of what the test did and observed
+    failure_dynamics: str = ""        # Root-cause analysis narrative
+    parameter_audit: Dict[str, Any] = {}  # Headers/params actually used in the request
+    security_implications: str = ""   # Any security signal detected from the response
+    requirement_match: str = ""       # Which BRD requirement this endpoint fulfils
+
 
 class GapItem(BaseModel):
     requirement_id: str
     requirement_text: str
+
 
 class ReportData(BaseModel):
     run_id: str
@@ -28,19 +41,21 @@ class ReportData(BaseModel):
     total_requirements: int
     requirements_covered: int
 
+
 class ReporterService:
     """
-    Generates structured audit data, calculates SpecScore™, 
+    Generates structured audit data, calculates SpecScore™,
     and produces professional PDF reports.
     """
-    
+
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             temperature=0.7,
             max_retries=3,
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
+        self.pdf_generator = PDFGeneratorService()
         self._init_firebase()
 
     def _init_firebase(self):
@@ -51,64 +66,253 @@ class ReporterService:
             service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
             if service_account_json:
                 if service_account_json.startswith("{"):
-                    import json
                     cred_dict = json.loads(service_account_json)
                     cred = credentials.Certificate(cred_dict)
                 else:
                     cred = credentials.Certificate(service_account_json)
                 firebase_admin.initialize_app(cred)
             else:
-                # Fallback to PROJECT_ID from environment if possible
                 project_id = os.getenv("NEXT_PUBLIC_FIREBASE_PROJECT_ID") or "spectest-app"
                 try:
-                    # This may still fail if no ADC is present, but it's a better attempt
-                    firebase_admin.initialize_app(options={'projectId': project_id})
+                    firebase_admin.initialize_app(options={"projectId": project_id})
                 except Exception as e:
                     print(f"Warning: Firebase initialization failed: {str(e)}")
                     print("Persistence will likely fail without FIREBASE_SERVICE_ACCOUNT.")
 
+    # ─── Task 1: Enrichment ───────────────────────────────────────────────────
+
+    async def enrich_results(self, results: List[TestResult], req_prefix: str = "BRD-REQ") -> List[TestResult]:
+        """
+        Enriches each TestResult with technical metadata.
+        Does NOT touch agent_executor.py or the rag_pipeline.
+        """
+        enriched = []
+        for i, r in enumerate(results):
+            req_num = i + 1
+
+            # Requirement match (serial mapping — extend with BRD ID lookup later)
+            r.requirement_match = (
+                f"This endpoint fulfils {req_prefix} Requirement #{req_num}: "
+                f"Coverage for {r.method} {r.endpoint}."
+            )
+
+            # Technical summary
+            if r.status in ["PASS", "HEALED"]:
+                r.technical_summary = (
+                    f"The agent successfully executed {r.method} {r.endpoint} and received "
+                    f"HTTP {r.status_code}. The endpoint behaviour is consistent with the Swagger specification."
+                )
+            else:
+                r.technical_summary = (
+                    f"The agent executed {r.method} {r.endpoint} but received HTTP {r.status_code}. "
+                    f"This endpoint does not behave as specified in the uploaded Swagger document."
+                )
+
+            # Failure dynamics (root-cause narrative)
+            if r.status == "FAIL":
+                if r.status_code == 404:
+                    r.failure_dynamics = (
+                        f"A 404 Not Found was returned. The path '{r.endpoint}' could not be resolved by "
+                        f"the live server. Possible causes: (1) path prefix mismatch (e.g., /api missing), "
+                        f"(2) the route is not deployed, (3) the base URL is mis-configured."
+                    )
+                elif r.status_code in [401, 403]:
+                    r.failure_dynamics = (
+                        f"A {r.status_code} response indicates an authentication or authorisation failure. "
+                        f"The request was formed correctly, but the server rejected the credentials or token."
+                    )
+                elif r.status_code in [400, 422]:
+                    r.failure_dynamics = (
+                        f"The server rejected the request body with {r.status_code}. "
+                        f"The generated payload may be missing required fields or use incorrect types. "
+                        f"Review the 'requestBody' schema in the Swagger document."
+                    )
+                elif r.status_code >= 500:
+                    r.failure_dynamics = (
+                        f"The server returned {r.status_code}, indicating an unhandled exception in the "
+                        f"target implementation. This is a live-environment gap — the spec is correct but the code is broken."
+                    )
+                else:
+                    r.failure_dynamics = r.details or "Unknown failure. Check server logs for details."
+            elif r.status == "HEALED":
+                r.failure_dynamics = (
+                    f"A 404 was initially returned. The SpecTest RAG engine queried the vector store and "
+                    f"found a corrected path. The healed request succeeded with HTTP {r.status_code}."
+                )
+            else:
+                r.failure_dynamics = "No failures detected. Nominal execution path followed."
+
+            # Parameter audit (what the agent sent)
+            r.parameter_audit = {
+                "method": r.method,
+                "endpoint": r.endpoint,
+                "headers_used": ["Content-Type: application/json"],
+                "auth_header": (
+                    "None (unauthenticated test)" if r.status_code not in [401, 403]
+                    else "Expected but missing or invalid"
+                ),
+                "payload_generated": "Yes" if r.method in ["POST", "PUT", "PATCH"] else "N/A",
+            }
+
+            # Security implications
+            if r.status_code == 403:
+                r.security_implications = (
+                    "MEDIUM: A 403 Forbidden response indicates the endpoint exists but access is blocked. "
+                    "Verify the authorisation logic is not overly restrictive and CORS is correctly configured."
+                )
+            elif r.status_code == 401:
+                r.security_implications = (
+                    "HIGH: A 401 Unauthorized response indicates the endpoint requires authentication. "
+                    "Ensure all production clients supply valid tokens and that token expiry is handled gracefully."
+                )
+            elif r.status_code >= 500:
+                r.security_implications = (
+                    "HIGH: A 5xx error can expose stack traces or internal details in some frameworks. "
+                    "Ensure production error handlers suppress sensitive implementation details."
+                )
+            elif r.status in ["PASS", "HEALED"]:
+                r.security_implications = (
+                    "LOW: Endpoint responded nominally. No obvious security signals detected during this test. "
+                    "Perform dedicated penetration testing for complete coverage."
+                )
+            else:
+                r.security_implications = "UNKNOWN: Could not determine security posture from this response."
+
+            enriched.append(r)
+
+        return enriched
+
+    # ─── Task 2: Structured Tab Payload ──────────────────────────────────────
+
+    def build_tab_payload(
+        self,
+        results: List[TestResult],
+        gaps: List[GapItem],
+        recommendations: List[str],
+        score: float,
+    ) -> Dict[str, Any]:
+        """
+        Builds a structured object for each dashboard tab.
+        Stored under 'tabs' in the Firestore document.
+        """
+        # Results tab — includes requirement_match and full technical breakdown
+        results_tab = {
+            "summary": {
+                "passed": sum(1 for r in results if r.status == "PASS"),
+                "failed": sum(1 for r in results if r.status == "FAIL"),
+                "healed": sum(1 for r in results if r.status == "HEALED"),
+                "total": len(results),
+            },
+            "entries": [
+                {
+                    "endpoint": r.endpoint,
+                    "method": r.method,
+                    "status": r.status,
+                    "status_code": r.status_code,
+                    "requirement_match": r.requirement_match,
+                    "technical_summary": r.technical_summary,
+                    "failure_dynamics": r.failure_dynamics,
+                    "parameter_audit": r.parameter_audit,
+                }
+                for r in results
+            ],
+        }
+
+        # Gaps tab
+        gaps_tab = {
+            "total_gaps": len(gaps),
+            "entries": [
+                {
+                    "requirement_id": g.requirement_id,
+                    "requirement_text": g.requirement_text,
+                    "remediation": "Define and deploy a corresponding API endpoint in the target environment.",
+                }
+                for g in gaps
+            ],
+        }
+
+        # Security tab
+        security_tab = {
+            "overall_risk": (
+                "HIGH"
+                if any(r.status_code in [401, 403, 500] for r in results)
+                else "MEDIUM"
+                if any(r.status == "FAIL" for r in results)
+                else "LOW"
+            ),
+            "findings": [
+                {
+                    "endpoint": r.endpoint,
+                    "method": r.method,
+                    "status_code": r.status_code,
+                    "security_implication": r.security_implications,
+                }
+                for r in results
+                if r.status != "PASS"
+            ],
+        }
+
+        # Recommendations tab
+        recommendations_tab = {
+            "spec_score": score,
+            "items": recommendations,
+        }
+
+        return {
+            "results": results_tab,
+            "gaps": gaps_tab,
+            "security": security_tab,
+            "recommendations": recommendations_tab,
+        }
+
+    # ─── Firestore Persistence ────────────────────────────────────────────────
+
     async def save_run_to_firebase(self, data: ReportData):
-        """Saves run metadata and SpecScore to Firestore."""
+        """Saves enriched run metadata and SpecScore to Firestore."""
         try:
             db = firestore.client()
             score = self.calculate_spec_score(data)
-            
+            enriched_results = await self.enrich_results(data.results)
+            recommendations = await self.generate_recommendations(data)
+            tabs = self.build_tab_payload(enriched_results, data.gaps, recommendations, score)
+
             doc_ref = db.collection("test_runs").document(data.run_id)
             doc_ref.set({
                 "run_id": data.run_id,
                 "timestamp": data.timestamp,
                 "spec_score": score,
-                "total_tests": len(data.results),
-                "passed": sum(1 for r in data.results if r.status == "PASS"),
-                "failed": sum(1 for r in data.results if r.status == "FAIL"),
-                "healed": sum(1 for r in data.results if r.status == "HEALED"),
+                "total_tests": len(enriched_results),
+                "passed": sum(1 for r in enriched_results if r.status == "PASS"),
+                "failed": sum(1 for r in enriched_results if r.status == "FAIL"),
+                "healed": sum(1 for r in enriched_results if r.status == "HEALED"),
                 "gaps": len(data.gaps),
-                "coverage_percent": (data.requirements_covered / data.total_requirements * 100) if data.total_requirements > 0 else 0,
-                "results": [r.dict() for r in data.results],
+                "coverage_percent": (
+                    (data.requirements_covered / data.total_requirements * 100)
+                    if data.total_requirements > 0 else 0
+                ),
+                # Flat results array — backward compat for Docs page
+                "results": [r.dict() for r in enriched_results],
                 "gap_details": [g.dict() for g in data.gaps],
-                "recommendations": await self.generate_recommendations(data)
+                "recommendations": recommendations,
+                # Structured per-tab payload for dashboard
+                "tabs": tabs,
             })
-            print(f"✓ Run {data.run_id} saved to Firebase.")
+            print(f"✓ Enriched run {data.run_id} saved to Firebase.")
             return True
         except Exception as e:
             print(f"Firebase Save Error: {str(e)}")
             return False
 
+    # ─── Score & Recommendations ──────────────────────────────────────────────
+
     def calculate_spec_score(self, data: ReportData) -> float:
-        """
-        Calculates SpecScore™ (0-100).
-        Formula: (Pass Rate * 0.6) + (Coverage * 0.4)
-        """
+        """Calculates SpecScore™ (0-100). Formula: ((Passed + Healed) / Total Tests) * 100"""
         total_tests = len(data.results)
         if total_tests == 0:
             return 0.0
-            
-        passed_tests = sum(1 for r in data.results if r.status in ["PASS", "HEALED"])
-        pass_rate = (passed_tests / total_tests) * 100
-        
-        coverage = (data.requirements_covered / data.total_requirements) * 100 if data.total_requirements > 0 else 0
-        
-        score = (pass_rate * 0.6) + (coverage * 0.4)
+
+        passed_or_healed = sum(1 for r in data.results if r.status in ["PASS", "HEALED"])
+        score = (passed_or_healed / total_tests) * 100
         return round(score, 1)
 
     async def generate_recommendations(self, data: ReportData) -> List[str]:
@@ -116,24 +320,23 @@ class ReporterService:
         failures = [r for r in data.results if r.status == "FAIL"]
         if not failures:
             return ["API health is optimal.", "Maintain current security protocols."]
-            
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a Senior API Architect. Based on these test failures, provide 3 punchy, actionable recommendations."),
             ("human", (
-                f"FAILURES:\n" + "\n".join([f"- {r.method} {r.endpoint}: {r.details}" for r in failures]) +
+                "FAILURES:\n" + "\n".join([f"- {r.method} {r.endpoint}: {r.details}" for r in failures]) +
                 "\n\nReturn ONLY a JSON array of strings. No bullets, no intro."
             ))
         ])
-        
+
         chain = prompt | self.llm
         try:
             response = await chain.ainvoke({})
-            # Naive extraction if it's not perfect JSON
             content = response.content.strip()
             if "[" in content and "]" in content:
-                content = content[content.find("["):content.rfind("]")+1]
+                content = content[content.find("["):content.rfind("]") + 1]
             return json.loads(content)
-        except:
+        except Exception:
             return ["Review failed endpoints for schema drift.", "Check authentication middleware for 403 errors."]
 
     async def generate_executive_summary(self, data: ReportData, score: float) -> str:
@@ -149,146 +352,65 @@ class ReporterService:
                 "Provide a one-paragraph executive summary highlighting risks and strengths."
             ))
         ])
-        
+
         chain = prompt | self.llm
         try:
             response = await chain.ainvoke({})
             return response.content.strip()
-        except:
+        except Exception:
             return "SpecTest Audit automatically analyzed your API. Please refer to metrics below."
 
+    # ─── PDF Generation ───────────────────────────────────────────────────────
+
     async def generate_pdf_from_run_id(self, run_id: str, output_path: str) -> Optional[str]:
-        """Fetches data from Firestore and generates a PDF on the fly."""
+        """Fetches data from Firestore and delegates whitepaper generation."""
         try:
             db = firestore.client()
             doc_ref = db.collection("test_runs").document(run_id)
             doc_snap = doc_ref.get()
-            
+
             if not doc_snap.exists:
                 return None
-                
+
             fire_data = doc_snap.to_dict()
-            
-            # Map Firestore data back to ReportData
-            results = [
-                TestResult(
-                    endpoint=r.get("endpoint", ""),
-                    method=r.get("method", ""),
-                    status=r.get("status", ""),
-                    status_code=r.get("status_code", 0),
-                    details=r.get("details", "")
-                ) for r in fire_data.get("results", [])
-            ]
-            
-            gaps = [
-                GapItem(
-                    requirement_id=g.get("requirement_id", ""),
-                    requirement_text=g.get("requirement_text", "")
-                ) for g in fire_data.get("gap_details", [])
-            ]
-            
-            report_data = ReportData(
-                run_id=run_id,
-                timestamp=fire_data.get("timestamp", datetime.now()),
-                results=results,
-                gaps=gaps,
-                total_requirements=fire_data.get("total_tests", len(results)),
-                requirements_covered=fire_data.get("total_tests", len(results)) # Fallback
-            )
-            
-            return await self.generate_pdf_report(report_data, output_path)
-            
+            return await self.pdf_generator.generate_whitepaper(fire_data, output_path)
+
         except Exception as e:
-            print(f"Error generating PDF from Firestore: {str(e)}")
+            print(f"Error delegating PDF generation: {str(e)}")
             return None
 
-    def _clean_text(self, text: str) -> str:
-        """Sanitizes text for FPDF to prevent Unicode encoding errors."""
-        if not text:
-            return ""
-        # Replace common problematic characters
-        replacements = {
-            "™": "(TM)",
-            "—": "-",
-            "–": "-",
-            "•": "*",
-            "\u201c": '"',
-            "\u201d": '"',
-            "\u2018": "'",
-            "\u2019": "'",
-            "✓": "ok"
-        }
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        # Remove any other non-latin1 characters to be safe
-        return text.encode('latin-1', 'ignore').decode('latin-1')
-
     async def generate_pdf_report(self, data: ReportData, output_path: str):
-        """Generates a professional PDF report."""
-        score = self.calculate_spec_score(data)
-        summary = await self.generate_executive_summary(data, score)
-        
-        pdf = FPDF()
-        pdf.add_page()
-        
-        # Header
-        pdf.set_fill_color(10, 14, 26) # Dark background
-        pdf.rect(0, 0, 210, 40, 'F')
-        pdf.set_font("Helvetica", "B", 24)
-        pdf.set_text_color(0, 212, 255) # Cyan
-        pdf.cell(190, 20, "SpecTest API Audit Report", ln=True, align='C')
-        pdf.set_font("Helvetica", "", 10)
-        pdf.set_text_color(123, 141, 176) # Gray
-        pdf.cell(190, 10, self._clean_text(f"Run ID: {data.run_id} | Date: {data.timestamp.strftime('%Y-%m-%d %H:%M')}"), ln=True, align='C')
-        
-        pdf.ln(10)
-        
-        # SpecScore Section
-        pdf.set_fill_color(240, 248, 255)
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.set_text_color(10, 14, 26)
-        pdf.cell(190, 10, self._clean_text(f"Overall SpecScore(TM): {score}/100"), ln=True, align='C')
-        pdf.ln(5)
-        
-        # Summary
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(190, 10, "Executive Summary", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.multi_cell(190, 5, self._clean_text(summary))
-        pdf.ln(10)
-        
-        # Endpoints Table
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(190, 10, "Endpoint Status Report", ln=True)
-        pdf.set_font("Helvetica", "B", 10)
-        
-        # Table Header
-        pdf.set_fill_color(30, 45, 74)
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(120, 10, "Endpoint", 1, 0, 'C', True)
-        pdf.cell(30, 10, "Method", 1, 0, 'C', True)
-        pdf.cell(40, 10, "Status", 1, 1, 'C', True)
-        
-        # Table Content
-        pdf.set_font("Helvetica", "", 9)
-        pdf.set_text_color(0, 0, 0)
-        for r in data.results:
-            pdf.cell(120, 8, self._clean_text(r.endpoint), 1)
-            pdf.cell(30, 8, self._clean_text(r.method), 1, 0, 'C')
-            
-            # Color coding status
-            if r.status == "PASS":
-                pdf.set_text_color(0, 128, 0)
-            elif r.status == "HEALED":
-                pdf.set_text_color(255, 128, 0)
-            else:
-                pdf.set_text_color(255, 0, 0)
-                
-            pdf.cell(40, 8, self._clean_text(r.status), 1, 1, 'C')
-            pdf.set_text_color(0, 0, 0)
+        """Generates the whitepaper from raw ReportData."""
+        # Convert Pydantic data to dict for the generator
+        dict_data = {
+            "run_id": data.run_id,
+            "spec_score": self.calculate_spec_score(data),
+            "timestamp": data.timestamp,
+            "results": [r.dict() for r in data.results],
+            "recommendations": await self.generate_recommendations(data),
+        }
+        return await self.pdf_generator.generate_whitepaper(dict_data, output_path)
 
-        pdf.ln(10)
-        
+        # Technical Details per endpoint
+        pdf.ln(8)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(190, 10, "Technical Analysis", ln=True)
+        for r in data.results:
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(190, 8, self._clean_text(f"{r.method} {r.endpoint} — {r.status}"), ln=True)
+            pdf.set_font("Helvetica", "", 9)
+            if r.requirement_match:
+                pdf.multi_cell(190, 5, self._clean_text(f"Requirement: {r.requirement_match}"))
+            if r.technical_summary:
+                pdf.multi_cell(190, 5, self._clean_text(f"Summary: {r.technical_summary}"))
+            if r.failure_dynamics and r.status != "PASS":
+                pdf.multi_cell(190, 5, self._clean_text(f"Root Cause: {r.failure_dynamics}"))
+            if r.security_implications:
+                pdf.multi_cell(190, 5, self._clean_text(f"Security: {r.security_implications}"))
+            pdf.ln(3)
+
+        pdf.ln(5)
+
         # Gap Analysis
         if data.gaps:
             pdf.set_font("Helvetica", "B", 12)

@@ -848,23 +848,6 @@ export default function NewTestPage() {
 									))}
 								</ul>
 							</div>
-
-							<div
-								className='rounded-2xl p-5'
-								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
-								<div className='flex items-center gap-2 mb-3'>
-									<Clock3 size={14} style={{ color: "#00D4FF" }} />
-									<h3
-										className='text-sm font-semibold'
-										style={{ color: "#E8EEFF" }}>
-										Run cadence
-									</h3>
-								</div>
-								<p className='text-sm leading-relaxed' style={{ color: "#7B8DB0" }}>
-									Most teams run regression checks at least once daily and after
-									every API schema change for reliable coverage.
-								</p>
-							</div>
 						</div>
 					</div>
 
