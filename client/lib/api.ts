@@ -19,7 +19,8 @@ export async function startRun(
   res = await fetch(`${BASE}/upload/swagger`, { method: "POST", body: swForm })
   if (!res.ok) throw new Error(await res.text())
 
-  // Generate a mock ID for the UI
+  // Save base URL for the run page stream logs
+  localStorage.setItem("spectest_base_url", baseUrl)
   return Date.now().toString()
 }
 
@@ -35,18 +36,23 @@ export function streamLogs(
 ): () => void {
   const abortController = new AbortController()
 
+  const targetUrl = localStorage.getItem("spectest_base_url") || "DEMO"
+  
   fetch(`${BASE}/run-full-suite`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      // Provide dummy mapping instructions to meet payload constraints
-      requirements: [
-        "REQ-01: login", "REQ-02: get profile", "REQ-03: create order"
-      ],
-      base_url: "DEMO"
+      requirements: [], // Sent as empty; backend will now parse the DB directly!
+      base_url: targetUrl
     }),
     signal: abortController.signal
   }).then(async res => {
+    if (!res.ok) {
+       const text = await res.text();
+       onLog(`❌ Server Error (${res.status}): ${text}`);
+       onDone();
+       return;
+    }
     if (!res.body) return
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
