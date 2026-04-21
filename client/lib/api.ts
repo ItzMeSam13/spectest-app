@@ -1,5 +1,40 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
+type StreamScoreBreakdown = {
+  coverage?: { detail?: string }
+  functional?: { detail?: string }
+}
+
+type StreamScoreData = {
+  spec_score?: number
+  breakdown?: StreamScoreBreakdown
+}
+
+type StreamEvent = {
+  done?: boolean
+  completed?: boolean
+  status?: string
+  msg?: string
+  log?: string
+  message?: string
+  text?: string
+  level?: string
+  data?: StreamScoreData
+}
+
+type ResultPayload = {
+  spec_score: number
+  requirements_found: number
+  tests_passed: number
+  tests_failed: number
+  gaps_found: number
+  vulnerabilities_found: number
+  results: Array<{ passed?: boolean; self_healed?: boolean; method: string; endpoint: string; status_code: number }>
+  gaps: Array<{ requirement_id: string; requirement_text: string }>
+  security: Array<{ vulnerable: boolean; attack_type: string; severity: string; endpoint: string; description?: string }>
+  recommendations: string[]
+}
+
 /**
  * Uploads the documents directly to our ingestion endpoints.
  */
@@ -78,7 +113,7 @@ export function streamLogs(
           const dataStr = chunk.slice(6)
           if (!dataStr.trim()) continue
           try {
-            const d = JSON.parse(dataStr)
+            const d = JSON.parse(dataStr) as StreamEvent
             if (d.done || d.completed || d.status === "completed") {
               onDone()
               return
@@ -87,7 +122,7 @@ export function streamLogs(
             if (msg) onLog(msg)
             if (d.level === "SCORE" && d.data) {
               onMetrics({
-                spec_score: d.data.spec_score,
+                spec_score: d.data.spec_score ?? 0,
                 tests_passed: parseInt(d.data.breakdown?.functional?.detail || "0"),
                 endpoints_mapped: parseInt(d.data.breakdown?.coverage?.detail || "0")
               })
@@ -107,7 +142,7 @@ export function streamLogs(
   return () => abortController.abort()
 }
 
-export async function getResult(runId: string): Promise<any> {
+export async function getResult(runId: string): Promise<ResultPayload> {
     // Generate dummy result payload that fulfills UI expectations
     return {
         spec_score: 82,
@@ -130,6 +165,7 @@ export async function getResult(runId: string): Promise<any> {
             { vulnerable: true, attack_type: "No Auth", severity: "high", endpoint: "GET /public/health", description: "Bypassed missing auth header completely" }
         ],
         recommendations: [
+            `Review run ${runId.slice(0, 8)} findings with the QA team.`,
             "Add Authentication to GET /public/health endpoints.",
             "Fix Swagger documentation drift on DELETE /users/{id}. Server currently rejects documented payload but accepts corrected payload.",
             "Great overall score!"
@@ -137,7 +173,7 @@ export async function getResult(runId: string): Promise<any> {
     }
 }
 
-export async function getAllRuns(): Promise<any[]> {
+export async function getAllRuns(): Promise<unknown[]> {
   try {
     const res = await fetch(`${BASE}/runs`)
     if (!res.ok) return []
