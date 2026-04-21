@@ -6,7 +6,6 @@ import {
   Upload,
   Link2,
   Zap,
-  ShieldCheck,
   GitBranch,
   RefreshCw,
   Shield,
@@ -144,8 +143,8 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/login" className="text-sm px-4 py-1.5 rounded-lg transition-colors" style={{ color: "#7B8DB0" }}>Sign in</Link>
-            <Link href="/signup" className="btn-cyan px-4 py-1.5 text-sm">Get started</Link>
+            <Link href="/auth" className="text-sm px-4 py-1.5 rounded-lg transition-colors" style={{ color: "#7B8DB0" }}>Sign in</Link>
+            <Link href="/auth" className="btn-cyan px-4 py-1.5 text-sm">Continue</Link>
           </div>
         </div>
       </nav>
@@ -173,7 +172,7 @@ export default function LandingPage() {
             SpecTest reads your requirements and your API spec, maps them together, and runs your entire test suite autonomously. Find gaps before your users do.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-            <Link href="/signup" className="btn-cyan px-8 py-3.5 text-base font-semibold flex items-center gap-2">
+            <Link href="/auth" className="btn-cyan px-8 py-3.5 text-base font-semibold flex items-center gap-2">
               Start Testing Free <ArrowRight size={18} />
             </Link>
             <Link href="/run/run-247" className="btn-ghost-cyan px-8 py-3.5 text-base font-medium flex items-center gap-2">
@@ -271,7 +270,7 @@ export default function LandingPage() {
         <div className="max-w-[700px] mx-auto px-6 text-center relative z-10">
           <h2 className="text-4xl font-bold mb-6" style={{ color: "#E8EEFF", letterSpacing: "-0.02em" }}>Ready to find your gaps?</h2>
           <p className="text-lg mb-10" style={{ color: "#7B8DB0" }}>Join QA engineers who&apos;ve stopped writing tests manually and started shipping with confidence.</p>
-          <Link href="/signup" className="btn-cyan inline-flex items-center gap-2 px-10 py-4 text-base font-semibold">
+          <Link href="/auth" className="btn-cyan inline-flex items-center gap-2 px-10 py-4 text-base font-semibold">
             Start Testing Free <ArrowRight size={18} />
           </Link>
         </div>
