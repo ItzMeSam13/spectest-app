@@ -30,7 +30,12 @@ export default function RootLayout({
       </head>
       <body style={{ background: "#0A0E1A", color: "#E8EEFF", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
         <AuthProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            {/* pt-14 ensures content starts below the fixed 56px Navbar */}
+            <div style={{ paddingTop: "56px", minHeight: "100vh" }}>
+              {children}
+            </div>
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

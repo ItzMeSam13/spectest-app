@@ -14,6 +14,7 @@ import {
 	User,
 	BarChart3,
 	LayoutDashboard,
+	FileText,
 	type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -29,8 +30,8 @@ type NavLinkItem = {
 const navLinks: NavLinkItem[] = [
 	{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
 	{ label: "Analytics", href: "/analytics", icon: BarChart3 },
+	{ label: "Docs", href: "/docs", icon: FileText },
 	{ label: "History", href: "/history", icon: History },
-	{ label: "Docs", href: "/docs", icon: Settings },
 ];
 
 export function Navbar() {

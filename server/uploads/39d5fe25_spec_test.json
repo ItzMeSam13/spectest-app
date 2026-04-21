@@ -1,0 +1,35 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "SocialPost API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/posts": {
+      "post": {
+        "summary": "Create a new blog post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": "string" },
+                  "author_id": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/users/1": {
+      "get": {
+        "summary": "Get specific user profile",
+        "responses": { "200": { "description": "Success" } }
+      }
+    }
+  }
+}

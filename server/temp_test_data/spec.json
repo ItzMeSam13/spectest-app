@@ -1,0 +1,1 @@
+{"openapi": "3.0.0", "paths": {"/api/v1/auth": {"post": {"summary": "User Login Endpoint", "description": "Returns a JWT token"}}, "/api/v1/dashboard": {"get": {"summary": "View User Stats"}}}}

@@ -1,0 +1,4 @@
+# SpecTest Business Requirements
+REQ-01: The system must allow a user to login with valid credentials.
+REQ-02: After login, users must be able to retrieve their private profile data.
+REQ-03: Users should be able to update their email address in their profile.

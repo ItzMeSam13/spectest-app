@@ -1,4 +1,17 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { db } from "./firebase"
+import { 
+  collection, 
+  getDocs, 
+  query, 
+  orderBy, 
+  limit, 
+  doc, 
+  getDoc,
+  setDoc,
+  serverTimestamp 
+} from "firebase/firestore"
+
+const BASE = "http://127.0.0.1:8000"
 
 type StreamScoreBreakdown = {
   coverage?: { detail?: string }
@@ -10,7 +23,7 @@ type StreamScoreData = {
   breakdown?: StreamScoreBreakdown
 }
 
-type StreamEvent = {
+export type StreamEvent = {
   done?: boolean
   completed?: boolean
   status?: string
@@ -43,152 +56,141 @@ export async function startRun(
   swaggerFile: File,
   baseUrl: string
 ): Promise<string> {
-  const reqForm = new FormData()
-  reqForm.append("file", reqFile)
-  const swForm = new FormData()
-  swForm.append("file", swaggerFile)
+  const formData = new FormData()
+  formData.append("brd", reqFile)
+  formData.append("swagger", swaggerFile)
+  formData.append("base_url", baseUrl)
 
-  let res = await fetch(`${BASE}/upload/requirements`, { method: "POST", body: reqForm })
+  const res = await fetch(`${BASE}/api/v1/upload`, { 
+    method: "POST", 
+    body: formData 
+  })
+  
   if (!res.ok) throw new Error(await res.text())
+  const data = await res.json()
 
-  res = await fetch(`${BASE}/upload/swagger`, { method: "POST", body: swForm })
-  if (!res.ok) throw new Error(await res.text())
-
-  // Save base URL for the run page stream logs
+  // Save base URL for the run page stream logs (if needed by context)
   localStorage.setItem("spectest_base_url", baseUrl)
-  return Date.now().toString()
+  return data.run_id
 }
 
 /**
- * Since our backend run-full-suite is a POST request (for the RAG payload),
- * we use fetch stream reading instead of EventSource (which only supports GET).
+ * Streams logs using EventSource (SSE).
  */
 export function streamLogs(
   runId: string,
-  onLog: (msg: string) => void,
-  onMetrics: (m: Record<string,number>) => void,
+  onEvent: (event: StreamEvent) => void,
   onDone: () => void
 ): () => void {
-  const abortController = new AbortController()
+  const eventSource = new EventSource(`${BASE}/api/v1/stream/${runId}`)
 
-  const targetUrl = localStorage.getItem("spectest_base_url") || "DEMO"
-  
-  fetch(`${BASE}/run-full-suite`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      requirements: [], // Sent as empty; backend will now parse the DB directly!
-      base_url: targetUrl
-    }),
-    signal: abortController.signal
-  }).then(async res => {
-    if (!res.ok) {
-       const text = await res.text();
-       onLog(`❌ Server Error (${res.status}): ${text}`);
-       onDone();
-       return;
+  eventSource.onmessage = (event) => {
+    if (event.data === "[DONE]") {
+      eventSource.close()
+      onDone()
+      return
     }
-    if (!res.body) return
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      while (buffer.includes("\\n\\n") || buffer.includes("\n\n")) {
-        const divider = buffer.includes("\\n\\n") ? "\\n\\n" : "\n\n";
-        const eolIndex = buffer.indexOf(divider)
-        const chunk = buffer.slice(0, eolIndex)
-        buffer = buffer.slice(eolIndex + divider.length)
-
-        if (chunk.trim() === "data: [DONE]") {
-          onDone()
-          return
-        }
-
-        if (chunk.startsWith("data: ")) {
-          const dataStr = chunk.slice(6)
-          if (!dataStr.trim()) continue
-          try {
-            const d = JSON.parse(dataStr) as StreamEvent
-            if (d.done || d.completed || d.status === "completed") {
-              onDone()
-              return
-            }
-            const msg = d.msg || d.log || d.message || d.text || dataStr
-            if (msg) onLog(msg)
-            if (d.level === "SCORE" && d.data) {
-              onMetrics({
-                spec_score: d.data.spec_score ?? 0,
-                tests_passed: parseInt(d.data.breakdown?.functional?.detail || "0"),
-                endpoints_mapped: parseInt(d.data.breakdown?.coverage?.detail || "0")
-              })
-            }
-          } catch {
-            if (dataStr && dataStr !== "[DONE]") {
-              onLog(dataStr)
-            }
-          }
-        }
+    try {
+      const data = JSON.parse(event.data) as StreamEvent
+      onEvent(data)
+      
+      if (data.done || data.completed) {
+        eventSource.close()
+        onDone()
       }
+    } catch (e) {
+      console.error("SSE Parse Error:", e)
     }
-  }).catch(() => {
-     // aborted
-  }).finally(() => onDone())
+  }
 
-  return () => abortController.abort()
+  eventSource.onerror = (err) => {
+    console.error("SSE Error:", err)
+    eventSource.close()
+    onDone()
+  }
+
+  return () => eventSource.close()
 }
 
 export async function getResult(runId: string): Promise<ResultPayload> {
-    // Generate dummy result payload that fulfills UI expectations
-    return {
-        spec_score: 82,
-        requirements_found: 3,
-        tests_passed: 4,
-        tests_failed: 0,
-        gaps_found: 0,
-        vulnerabilities_found: 1,
-        results: [
-            { passed: true, method: "POST", endpoint: "/auth/login", status_code: 200 },
-            { passed: true, method: "GET", endpoint: "/users/me", status_code: 200 },
-            { self_healed: true, passed: true, method: "DELETE", endpoint: "/users/{id}", status_code: 204 },
-            { passed: true, method: "PUT", endpoint: "/posts/{id}", status_code: 200 },
-        ],
-        gaps: [],
-        security: [
-            { vulnerable: false, attack_type: "SQL Injection", severity: "pass", endpoint: "/auth/login" },
-            { vulnerable: false, attack_type: "XSS", severity: "pass", endpoint: "/auth/login" },
-            { vulnerable: false, attack_type: "No Auth", severity: "pass", endpoint: "/users/me" },
-            { vulnerable: true, attack_type: "No Auth", severity: "high", endpoint: "GET /public/health", description: "Bypassed missing auth header completely" }
-        ],
-        recommendations: [
-            `Review run ${runId.slice(0, 8)} findings with the QA team.`,
-            "Add Authentication to GET /public/health endpoints.",
-            "Fix Swagger documentation drift on DELETE /users/{id}. Server currently rejects documented payload but accepts corrected payload.",
-            "Great overall score!"
-        ]
+    let attempts = 0;
+    while (attempts < 3) {
+        try {
+          const docRef = doc(db, "test_runs", runId);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const fireData = docSnap.data();
+            return {
+                spec_score: fireData.spec_score || 0,
+                requirements_found: fireData.total_tests || 0,
+                tests_passed: fireData.passed || 0,
+                tests_failed: fireData.failed || 0,
+                gaps_found: fireData.gaps || 0,
+                vulnerabilities_found: 0,
+                results: (fireData.results || []).map((r: any) => ({
+                    passed: r.status === "PASS" || r.status === "HEALED",
+                    self_healed: r.status === "HEALED",
+                    method: r.method,
+                    endpoint: r.endpoint,
+                    status_code: r.status_code,
+                    ai_explanation: r.details
+                })),
+                gaps: (fireData.gap_details || []).map((g: any) => ({
+                    requirement_id: g.requirement_id,
+                    requirement_text: g.requirement_text
+                })),
+                security: (fireData.security_results || []).map((s: any) => ({
+                    vulnerable: s.vulnerable,
+                    attack_type: s.attack_type,
+                    severity: s.severity,
+                    endpoint: s.endpoint,
+                    description: s.description
+                })),
+                recommendations: fireData.recommendations || [
+                    `Audit completed on ${new Date(fireData.timestamp?.seconds * 1000).toLocaleString()}`,
+                    "Ready for deployment."
+                ]
+            };
+          }
+        } catch (e) {
+          console.error("Firestore Fetch Error (Attempt " + (attempts + 1) + "):", e);
+        }
+        
+        attempts++;
+        if (attempts < 3) await new Promise(r => setTimeout(r, 1500)); // Wait 1.5s between retries
     }
+
+    throw new Error("Result document not found. The mission report might still be processing. Please wait a moment and refresh.");
 }
 
 export async function getAllRuns(): Promise<unknown[]> {
   try {
-    const res = await fetch(`${BASE}/runs`)
+    const res = await fetch(`${BASE}/api/v1/runs`)
     if (!res.ok) return []
     return res.json()
   } catch { return [] }
 }
 
 export async function exportPDF(runId: string): Promise<void> {
-  const res = await fetch(`${BASE}/results/${runId}/export`)
-  if (!res.ok) return
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
+  const url = `${BASE}/api/v1/report/${runId}`
   const a = document.createElement('a')
   a.href = url
-  a.download = `spectest-${runId.slice(0,8)}.pdf`
+  a.download = `SpecTest_Audit_${runId}.pdf`
   a.click()
-  URL.revokeObjectURL(url)
+}
+
+export async function saveResultToFirestore(runId: string, data: any): Promise<void> {
+    try {
+        const docRef = doc(db, "test_runs", runId);
+        await setDoc(docRef, {
+            ...data,
+            timestamp: data.timestamp ? data.timestamp : serverTimestamp()
+        });
+        console.log(`✓ Run ${runId} persisted from client.`);
+    } catch (e) {
+        console.error("Error persisting from client:", e);
+        throw e;
+    }
 }
