@@ -4,10 +4,48 @@ import { useParams } from "next/navigation"
 import { getResult, exportPDF } from "@/lib/api"
 import { Navbar } from "@/components/shared/Navbar"
 
+type TestResult = {
+  passed?: boolean
+  self_healed?: boolean
+  method?: string
+  endpoint?: string
+  status_code?: number
+  response_time_ms?: number
+  ai_explanation?: string
+}
+
+type GapResult = {
+  requirement_id?: string
+  requirement_text?: string
+}
+
+type SecurityResult = {
+  vulnerable?: boolean
+  attack_type?: string
+  severity?: string
+  endpoint?: string
+  description?: string
+}
+
+type RunResult = {
+  spec_score?: number
+  requirements_found?: number
+  tests_passed?: number
+  tests_failed?: number
+  gaps_found?: number
+  vulnerabilities_found?: number
+  test_results?: TestResult[]
+  results?: TestResult[]
+  gaps?: GapResult[]
+  security_results?: SecurityResult[]
+  security?: SecurityResult[]
+  recommendations?: string[]
+}
+
 export default function ResultsPage() {
   const params = useParams()
   const runId = params.id as string
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<RunResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState(0)
 
@@ -165,7 +203,7 @@ export default function ResultsPage() {
           <div>
             {(data.test_results || 
               data.results || [])
-              .map((r: any, i: number) => (
+              .map((r: TestResult, i: number) => (
               <div key={i} style={{
                 background:"#141D35",
                 border:`1px solid ${
@@ -232,7 +270,7 @@ export default function ResultsPage() {
                 All requirements are covered.
               </div>
             ) : (data.gaps || []).map(
-              (g: any, i: number) => (
+              (g: GapResult, i: number) => (
               <div key={i} style={{
                 background:"#141D35",
                 borderLeft:"4px solid #FF4560",
@@ -267,7 +305,7 @@ export default function ResultsPage() {
           <div>
             {(data.security_results || 
               data.security || [])
-              .map((s: any, i: number) => (
+              .map((s: SecurityResult, i: number) => (
               <div key={i} style={{
                 background:"#141D35",
                 borderLeft:`4px solid ${

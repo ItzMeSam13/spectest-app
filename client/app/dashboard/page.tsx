@@ -47,17 +47,12 @@ function UploadZone({
 		e.preventDefault();
 		setDragging(false);
 		const droppedFile = e.dataTransfer.files[0];
-		if (droppedFile)
-			onFile({
-				name: droppedFile.name,
-				size: droppedFile.size,
-				type: droppedFile.type,
-			});
+		if (droppedFile) onFile(droppedFile);
 	};
 
 	const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const f = e.target.files?.[0];
-		if (f) onFile({ name: f.name, size: f.size, type: f.type });
+		if (f) onFile(f);
 	};
 
 	const formatSize = (bytes: number) => {

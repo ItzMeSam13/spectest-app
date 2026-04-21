@@ -13,7 +13,7 @@ export default function RunPage() {
   const [done, setDone] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<any>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
