@@ -1,531 +1,866 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Navbar } from "@/components/shared/Navbar";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
+import { Navbar } from "@/components/shared/Navbar";
+import { useToast } from "@/components/shared/Toast";
 import {
-	ScoreBadge,
-	MiniSpecScoreRing,
-} from "@/components/shared/SpecScoreRing";
-import { mockRuns, specScoreTrend } from "@/lib/mock-data";
-import {
-	TrendingUp,
-	Plus,
-	Eye,
-	ArrowUpRight,
-	AlertTriangle,
-	CheckCircle2,
+	Upload,
+	File,
+	X,
+	CheckCircle,
+	ChevronDown,
+	ChevronUp,
 	Zap,
-	RefreshCw,
-	Shield,
-	BookOpen,
-	ChevronRight,
+	Eye,
+	Link2,
+	Play,
+	Settings,
+	AlertCircle,
+	Code2,
+	Clock3,
 } from "lucide-react";
-import {
-	LineChart,
-	Line,
-	XAxis,
-	YAxis,
-	Tooltip,
-	ResponsiveContainer,
-	CartesianGrid,
-} from "recharts";
 
-const STATUS_CONFIG = {
-	completed: {
-		label: "Completed",
-		color: "#00E396",
-		bg: "rgba(0,227,150,0.12)",
-		border: "rgba(0,227,150,0.25)",
-	},
-	running: {
-		label: "Running",
-		color: "#00D4FF",
-		bg: "rgba(0,212,255,0.12)",
-		border: "rgba(0,212,255,0.25)",
-	},
-	failed: {
-		label: "Failed",
-		color: "#FF4560",
-		bg: "rgba(255,69,96,0.12)",
-		border: "rgba(255,69,96,0.25)",
-	},
-};
+type AuthType = "none" | "bearer" | "basic" | "apikey";
+type Step = 1 | 2 | 3;
 
-function CustomTooltip({
-	active,
-	payload,
-	label,
-}: {
-	active?: boolean;
-	payload?: Array<{ value: number }>;
-	label?: string;
-}) {
-	if (active && payload && payload.length) {
-		return (
-			<div
-				className='px-3 py-2 rounded-lg text-sm'
-				style={{
-					background: "#141D35",
-					border: "1px solid #1E2D4A",
-					color: "#E8EEFF",
-				}}>
-				<p style={{ color: "#7B8DB0", fontSize: 11 }}>{label}</p>
-				<p className='font-semibold' style={{ color: "#00D4FF" }}>
-					Score: {payload[0].value}
-				</p>
-			</div>
-		);
-	}
-	return null;
+interface UploadedFile {
+	name: string;
+	size: number;
+	type: string;
 }
 
-export default function Dashboard() {
-	const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+function UploadZone({
+	label,
+	accepts,
+	acceptText,
+	file,
+	onFile,
+	onRemove,
+}: {
+	label: string;
+	accepts: string;
+	acceptText: string;
+	file: UploadedFile | null;
+	onFile: (f: UploadedFile) => void;
+	onRemove: () => void;
+}) {
+	const [dragging, setDragging] = useState(false);
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	const handleDrop = (e: React.DragEvent) => {
+		e.preventDefault();
+		setDragging(false);
+		const droppedFile = e.dataTransfer.files[0];
+		if (droppedFile)
+			onFile({
+				name: droppedFile.name,
+				size: droppedFile.size,
+				type: droppedFile.type,
+			});
+	};
+
+	const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const f = e.target.files?.[0];
+		if (f) onFile({ name: f.name, size: f.size, type: f.type });
+	};
+
+	const formatSize = (bytes: number) => {
+		if (bytes < 1024) return `${bytes}B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+	};
+
+	return (
+		<div
+			className={`drop-zone p-6 flex flex-col items-center justify-center text-center cursor-pointer min-h-[160px] ${dragging ? "drag-over" : ""}`}
+			onClick={() => !file && inputRef.current?.click()}
+			onDragOver={(e) => {
+				e.preventDefault();
+				setDragging(true);
+			}}
+			onDragLeave={() => setDragging(false)}
+			onDrop={handleDrop}>
+			<input
+				ref={inputRef}
+				type='file'
+				accept={accepts}
+				className='hidden'
+				onChange={handleInput}
+			/>
+			{file ? (
+				<div className='flex flex-col items-center gap-2 w-full'>
+					<div
+						className='w-10 h-10 rounded-xl flex items-center justify-center'
+						style={{ background: "rgba(0,227,150,0.15)" }}>
+						<CheckCircle size={20} style={{ color: "#00E396" }} />
+					</div>
+					<p
+						className='text-sm font-medium max-w-full truncate px-2'
+						style={{ color: "#E8EEFF" }}>
+						{file.name}
+					</p>
+					<p className='text-xs' style={{ color: "#4A5A78" }}>
+						{formatSize(file.size)}
+					</p>
+					<button
+						onClick={(e) => {
+							e.stopPropagation();
+							onRemove();
+						}}
+						className='flex items-center gap-1 text-xs px-3 py-1 rounded-lg transition-colors mt-1'
+						style={{ color: "#FF4560", background: "rgba(255,69,96,0.1)" }}
+						onMouseEnter={(e) =>
+							((e.currentTarget as HTMLElement).style.background =
+								"rgba(255,69,96,0.2)")
+						}
+						onMouseLeave={(e) =>
+							((e.currentTarget as HTMLElement).style.background =
+								"rgba(255,69,96,0.1)")
+						}>
+						<X size={12} /> Remove
+					</button>
+				</div>
+			) : (
+				<>
+					<div
+						className='w-10 h-10 rounded-xl flex items-center justify-center mb-3'
+						style={{ background: "rgba(0,212,255,0.1)" }}>
+						<Upload size={20} style={{ color: "#00D4FF" }} />
+					</div>
+					<p className='text-sm font-medium mb-1' style={{ color: "#E8EEFF" }}>
+						{label}
+					</p>
+					<p className='text-xs mb-2' style={{ color: "#4A5A78" }}>
+						Drag & drop or click to browse
+					</p>
+					<p className='text-xs' style={{ color: "#4A5A78" }}>
+						Accepts: {acceptText}
+					</p>
+				</>
+			)}
+		</div>
+	);
+}
+
+export default function NewTestPage() {
+	const [step, setStep] = useState<Step>(1);
+	const [reqFile, setReqFile] = useState<UploadedFile | null>(null);
+	const [specFile, setSpecFile] = useState<UploadedFile | null>(null);
+	const [baseUrl, setBaseUrl] = useState("");
+	const [authType, setAuthType] = useState<AuthType>("none");
+	const [bearerToken, setBearerToken] = useState("");
+	const [basicUser, setBasicUser] = useState("");
+	const [basicPass, setBasicPass] = useState("");
+	const [apiKeyName, setApiKeyName] = useState("");
+	const [apiKeyValue, setApiKeyValue] = useState("");
+	const [testEmail, setTestEmail] = useState("");
+	const [testPassword, setTestPassword] = useState("");
+	const [timeout, setTimeoutVal] = useState("10");
+	const [maxRetries, setMaxRetries] = useState("2");
+	const [securityFuzzing, setSecurityFuzzing] = useState(true);
+	const [selfHealing, setSelfHealing] = useState(true);
+	const [advancedOpen, setAdvancedOpen] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const { toast } = useToast();
 	const router = useRouter();
-	const { user, loading } = useAuth();
 
-	useEffect(() => {
-		if (!loading && !user) {
-			router.replace("/");
+	const canProceedStep1 = reqFile && specFile;
+	const canProceedStep2 = baseUrl.trim() !== "";
+
+	const handleRun = async () => {
+		setLoading(true);
+		try {
+			toast("success", "Test run started.");
+			router.push("/run/run-247");
+		} catch {
+			setLoading(false);
+			toast("error", "Could not start run. Please try again.");
 		}
-	}, [loading, user, router]);
+	};
 
-	if (loading || !user) {
-		return (
-			<div
-				className='min-h-screen flex items-center justify-center'
-				style={{ background: "#0A0E1A", color: "#E8EEFF" }}>
-				Loading...
-			</div>
-		);
-	}
+	const AGENT_STEPS = [
+		{
+			icon: File,
+			label: "Reader",
+			desc: "Parses your requirements doc and extracts structured requirements",
+		},
+		{
+			icon: Link2,
+			label: "Planner",
+			desc: "Maps requirements to endpoints and plans the test sequence",
+		},
+		{
+			icon: Play,
+			label: "Executor",
+			desc: "Runs HTTP tests against your API with generated payloads",
+		},
+		{
+			icon: Eye,
+			label: "Reviewer",
+			desc: "Analyzes failures, attempts self-healing, flags gaps",
+		},
+		{
+			icon: Settings,
+			label: "Reporter",
+			desc: "Generates SpecScore and the final gap + security report",
+		},
+	];
 
 	return (
 		<div style={{ background: "#0A0E1A", minHeight: "100vh" }}>
 			<Navbar />
 			<div className='pt-14'>
-				<div className='max-w-[1400px] mx-auto px-4 sm:px-6 py-8'>
-					{/* Header */}
-					<div className='flex items-center justify-between mb-8'>
-						<div>
-							<h1
-								className='text-2xl font-bold mb-1'
-								style={{ color: "#E8EEFF", letterSpacing: "-0.01em" }}>
-								Dashboard
-							</h1>
-							<p className='text-sm' style={{ color: "#7B8DB0" }}>
-								Monday, April 21, 2026
-							</p>
-						</div>
-						<Link
-							href='/new-test'
-							className='btn-cyan px-5 py-2.5 text-sm font-semibold flex items-center gap-2'>
-							<Plus size={16} /> New Test
-						</Link>
+				<div className='max-w-[1300px] mx-auto px-4 sm:px-6 py-8'>
+					<div className='mb-8'>
+						<h1
+							className='text-2xl font-bold mb-1'
+							style={{ color: "#E8EEFF" }}>
+							New Test Run
+						</h1>
+						<p className='text-sm' style={{ color: "#7B8DB0" }}>
+							Upload your documents, configure settings, and launch the AI agent
+						</p>
 					</div>
 
-					{/* Stats row */}
-					<div className='grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8'>
-						{[
-							{
-								label: "Total Tests Run",
-								value: "247",
-								icon: Zap,
-								color: "#00D4FF",
-								sub: "+12 this week",
-							},
-							{
-								label: "Avg SpecScore™",
-								value: "73",
-								icon: null,
-								color: "#FFB547",
-								sub: "-2 from last week",
-								ring: true,
-							},
-							{
-								label: "Gaps Detected",
-								value: "18",
-								icon: AlertTriangle,
-								color: "#FF4560",
-								sub: "Across all runs",
-							},
-							{
-								label: "Tests This Week",
-								value: "12",
-								icon: TrendingUp,
-								color: "#00E396",
-								sub: "+4 vs last week",
-								trend: true,
-							},
-						].map((stat, i) => (
-							<div
-								key={i}
-								className='card-hover p-5 rounded-2xl'
-								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
-								<div className='flex items-start justify-between mb-3'>
-									<p
-										className='text-xs font-medium'
-										style={{ color: "#7B8DB0" }}>
-										{stat.label}
-									</p>
-									{stat.ring ? (
-										<MiniSpecScoreRing score={73} />
-									) : stat.icon ? (
-										<div
-											className='w-8 h-8 rounded-lg flex items-center justify-center'
-											style={{ background: `${stat.color}15` }}>
-											<stat.icon size={16} style={{ color: stat.color }} />
-										</div>
-									) : null}
-								</div>
-								<p
-									className='text-3xl font-bold mb-1'
-									style={{
-										color: stat.ring
-											? "#FFB547"
-											: stat.color === "#FF4560"
-												? "#FF4560"
-												: "#E8EEFF",
-									}}>
-									{stat.value}
-								</p>
-								<p
-									className='text-xs flex items-center gap-1'
-									style={{ color: stat.trend ? "#00E396" : "#4A5A78" }}>
-									{stat.trend && <ArrowUpRight size={11} />}
-									{stat.sub}
-								</p>
-							</div>
-						))}
-					</div>
-
-					<div className='grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6'>
-						{/* Left column */}
+					<div className='grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6'>
+						{/* LEFT COLUMN */}
 						<div className='space-y-6'>
-							{/* Recent Runs Table */}
-							<div
-								className='rounded-2xl overflow-hidden'
-								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
-								<div
-									className='px-6 py-4 flex items-center justify-between'
-									style={{ borderBottom: "1px solid #1E2D4A" }}>
-									<h2 className='font-semibold' style={{ color: "#E8EEFF" }}>
-										Recent Runs
-									</h2>
-									<Link
-										href='/history'
-										className='text-xs flex items-center gap-1 transition-colors'
-										style={{ color: "#7B8DB0" }}
-										onMouseEnter={(e) =>
-											((e.target as HTMLElement).style.color = "#00D4FF")
-										}
-										onMouseLeave={(e) =>
-											((e.target as HTMLElement).style.color = "#7B8DB0")
-										}>
-										View all <ChevronRight size={12} />
-									</Link>
-								</div>
-								<div className='overflow-x-auto'>
-									<table className='w-full text-sm'>
-										<thead>
-											<tr style={{ borderBottom: "1px solid #1E2D4A" }}>
-												{[
-													"Project",
-													"SpecScore",
-													"Tests",
-													"Passed",
-													"Gaps",
-													"Security",
-													"Date",
-													"Status",
-													"",
-												].map((h) => (
-													<th
-														key={h}
-														className='px-4 py-3 text-left text-xs font-medium'
-														style={{ color: "#4A5A78", whiteSpace: "nowrap" }}>
-														{h}
-													</th>
-												))}
-											</tr>
-										</thead>
-										<tbody>
-											{mockRuns.map((run) => {
-												const sc = STATUS_CONFIG[run.status];
-												return (
-													<tr
-														key={run.id}
-														className='cursor-pointer transition-colors'
-														style={{
-															borderBottom: "1px solid #1E2D4A",
-															background:
-																hoveredRow === run.id
-																	? "#0F1629"
-																	: "transparent",
-														}}
-														onMouseEnter={() => setHoveredRow(run.id)}
-														onMouseLeave={() => setHoveredRow(null)}>
-														<td className='px-4 py-3.5'>
-															<p
-																className='font-medium text-sm'
-																style={{ color: "#E8EEFF" }}>
-																{run.project}
-															</p>
-															<p
-																className='text-xs'
-																style={{ color: "#4A5A78" }}>
-																#{run.id.replace("run-", "")}
-															</p>
-														</td>
-														<td className='px-4 py-3.5'>
-															<ScoreBadge score={run.specScore} />
-														</td>
-														<td
-															className='px-4 py-3.5 tabular-nums'
-															style={{ color: "#7B8DB0" }}>
-															{run.tests}
-														</td>
-														<td
-															className='px-4 py-3.5 tabular-nums'
-															style={{ color: "#00E396" }}>
-															{run.passed}
-														</td>
-														<td
-															className='px-4 py-3.5 tabular-nums'
-															style={{
-																color: run.gaps > 0 ? "#FFB547" : "#7B8DB0",
-															}}>
-															{run.gaps}
-														</td>
-														<td
-															className='px-4 py-3.5 tabular-nums'
-															style={{
-																color:
-																	run.securityIssues > 0
-																		? "#FF4560"
-																		: "#7B8DB0",
-															}}>
-															{run.securityIssues}
-														</td>
-														<td
-															className='px-4 py-3.5 text-xs'
-															style={{
-																color: "#4A5A78",
-																whiteSpace: "nowrap",
-															}}>
-															{new Date(run.date).toLocaleDateString("en-US", {
-																month: "short",
-																day: "numeric",
-															})}
-														</td>
-														<td className='px-4 py-3.5'>
-															<span
-																className='px-2 py-0.5 rounded-md text-xs font-medium'
-																style={{
-																	background: sc.bg,
-																	color: sc.color,
-																	border: `1px solid ${sc.border}`,
-																}}>
-																{run.status === "running" && (
-																	<span
-																		className='inline-block w-1.5 h-1.5 rounded-full mr-1 animate-pulse'
-																		style={{ background: sc.color }}
-																	/>
-																)}
-																{sc.label}
-															</span>
-														</td>
-														<td className='px-4 py-3.5'>
-															<Link
-																href={`/results/${run.id}`}
-																className='flex items-center gap-1 text-xs font-medium transition-colors px-2.5 py-1 rounded-lg'
-																style={{
-																	color: "#00D4FF",
-																	background: "rgba(0,212,255,0.08)",
-																}}
-																onMouseEnter={(e) =>
-																	((
-																		e.currentTarget as HTMLElement
-																	).style.background = "rgba(0,212,255,0.15)")
-																}
-																onMouseLeave={(e) =>
-																	((
-																		e.currentTarget as HTMLElement
-																	).style.background = "rgba(0,212,255,0.08)")
-																}>
-																<Eye size={12} /> View
-															</Link>
-														</td>
-													</tr>
-												);
-											})}
-										</tbody>
-									</table>
-								</div>
+							{/* Step indicator */}
+							<div className='flex items-center gap-0'>
+								{[
+									{ num: 1, label: "Upload" },
+									{ num: 2, label: "Configure" },
+									{ num: 3, label: "Launch" },
+								].map((s, i) => {
+									const active = step === s.num;
+									const done = step > s.num;
+									return (
+										<div key={s.num} className='flex items-center'>
+											<button
+												onClick={() => {
+													if (done || active) setStep(s.num as Step);
+												}}
+												className='flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all'
+												style={{
+													background: active
+														? "rgba(0,212,255,0.1)"
+														: "transparent",
+													color: active
+														? "#00D4FF"
+														: done
+															? "#00E396"
+															: "#4A5A78",
+													border: active
+														? "1px solid rgba(0,212,255,0.2)"
+														: "1px solid transparent",
+												}}>
+												<div
+													className='w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold'
+													style={{
+														background: active
+															? "#00D4FF"
+															: done
+																? "#00E396"
+																: "#1E2D4A",
+														color: active || done ? "#0A0E1A" : "#4A5A78",
+													}}>
+													{done ? "✓" : s.num}
+												</div>
+												{s.label}
+											</button>
+											{i < 2 && (
+												<div
+													className='w-8 h-px mx-1'
+													style={{
+														background: step > s.num ? "#00E39666" : "#1E2D4A",
+													}}
+												/>
+											)}
+										</div>
+									);
+								})}
 							</div>
 
-							{/* Chart */}
-							<div
-								className='rounded-2xl p-6'
-								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
-								<div className='flex items-center justify-between mb-6'>
+							{/* STEP 1 */}
+							{step === 1 && (
+								<div
+									className='rounded-2xl p-6'
+									style={{
+										background: "#141D35",
+										border: "1px solid #1E2D4A",
+									}}>
+									<h2
+										className='font-semibold mb-1'
+										style={{ color: "#E8EEFF" }}>
+										Upload Documents
+									</h2>
+									<p className='text-sm mb-6' style={{ color: "#7B8DB0" }}>
+										Provide your requirements document and API specification
+									</p>
+									<div className='grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6'>
+										<UploadZone
+											label='Requirements Document'
+											accepts='.pdf,.docx,.txt'
+											acceptText='.pdf, .docx, .txt'
+											file={reqFile}
+											onFile={setReqFile}
+											onRemove={() => setReqFile(null)}
+										/>
+										<UploadZone
+											label='API Specification'
+											accepts='.json,.yaml,.yml'
+											acceptText='.json, .yaml, .yml'
+											file={specFile}
+											onFile={setSpecFile}
+											onRemove={() => setSpecFile(null)}
+										/>
+									</div>
+									{!canProceedStep1 && (
+										<div
+											className='flex items-center gap-2 text-sm mb-4'
+											style={{ color: "#4A5A78" }}>
+											<AlertCircle size={14} />
+											Both files are required to proceed
+										</div>
+									)}
+									<button
+										onClick={() => canProceedStep1 && setStep(2)}
+										disabled={!canProceedStep1}
+										className='btn-cyan px-6 py-2.5 text-sm font-semibold'
+										style={{ opacity: canProceedStep1 ? 1 : 0.4 }}>
+										Continue to Configuration →
+									</button>
+								</div>
+							)}
+
+							{/* STEP 2 */}
+							{step === 2 && (
+								<div
+									className='rounded-2xl p-6 space-y-6'
+									style={{
+										background: "#141D35",
+										border: "1px solid #1E2D4A",
+									}}>
 									<div>
 										<h2
 											className='font-semibold mb-1'
 											style={{ color: "#E8EEFF" }}>
-											SpecScore™ Trend
+											Configuration
 										</h2>
-										<p className='text-xs' style={{ color: "#4A5A78" }}>
-											Last 7 runs
+										<p className='text-sm' style={{ color: "#7B8DB0" }}>
+											Configure your API target and authentication
 										</p>
 									</div>
-									<div className='flex items-center gap-2'>
-										<div
-											className='w-3 h-0.5 rounded'
-											style={{ background: "#00D4FF" }}
+
+									<div>
+										<label
+											className='block text-sm font-medium mb-1.5'
+											style={{ color: "#7B8DB0" }}>
+											API Base URL *
+										</label>
+										<input
+											className='input-dark'
+											placeholder='https://api.yourapp.com'
+											value={baseUrl}
+											onChange={(e) => setBaseUrl(e.target.value)}
 										/>
-										<span className='text-xs' style={{ color: "#4A5A78" }}>
-											SpecScore
-										</span>
+									</div>
+
+									<div>
+										<label
+											className='block text-sm font-medium mb-3'
+											style={{ color: "#7B8DB0" }}>
+											Authentication
+										</label>
+										<div className='grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4'>
+											{(
+												["none", "bearer", "basic", "apikey"] as AuthType[]
+											).map((type) => (
+												<button
+													key={type}
+													onClick={() => setAuthType(type)}
+													className='py-2 px-3 rounded-xl text-xs font-medium capitalize transition-all'
+													style={{
+														background:
+															authType === type
+																? "rgba(0,212,255,0.12)"
+																: "#0A0E1A",
+														border: `1px solid ${authType === type ? "rgba(0,212,255,0.3)" : "#1E2D4A"}`,
+														color: authType === type ? "#00D4FF" : "#7B8DB0",
+													}}>
+													{type === "none"
+														? "No Auth"
+														: type === "bearer"
+															? "Bearer Token"
+															: type === "basic"
+																? "Basic Auth"
+																: "API Key"}
+												</button>
+											))}
+										</div>
+										{authType === "bearer" && (
+											<div>
+												<label
+													className='block text-xs font-medium mb-1.5'
+													style={{ color: "#7B8DB0" }}>
+													Bearer Token
+												</label>
+												<input
+													className='input-dark'
+													placeholder='eyJhbGci...'
+													value={bearerToken}
+													onChange={(e) => setBearerToken(e.target.value)}
+												/>
+											</div>
+										)}
+										{authType === "basic" && (
+											<div className='grid grid-cols-2 gap-3'>
+												<div>
+													<label
+														className='block text-xs font-medium mb-1.5'
+														style={{ color: "#7B8DB0" }}>
+														Username
+													</label>
+													<input
+														className='input-dark'
+														placeholder='admin'
+														value={basicUser}
+														onChange={(e) => setBasicUser(e.target.value)}
+													/>
+												</div>
+												<div>
+													<label
+														className='block text-xs font-medium mb-1.5'
+														style={{ color: "#7B8DB0" }}>
+														Password
+													</label>
+													<input
+														type='password'
+														className='input-dark'
+														placeholder='••••••••'
+														value={basicPass}
+														onChange={(e) => setBasicPass(e.target.value)}
+													/>
+												</div>
+											</div>
+										)}
+										{authType === "apikey" && (
+											<div className='grid grid-cols-2 gap-3'>
+												<div>
+													<label
+														className='block text-xs font-medium mb-1.5'
+														style={{ color: "#7B8DB0" }}>
+														Key Name
+													</label>
+													<input
+														className='input-dark'
+														placeholder='X-API-Key'
+														value={apiKeyName}
+														onChange={(e) => setApiKeyName(e.target.value)}
+													/>
+												</div>
+												<div>
+													<label
+														className='block text-xs font-medium mb-1.5'
+														style={{ color: "#7B8DB0" }}>
+														Key Value
+													</label>
+													<input
+														className='input-dark'
+														placeholder='sk-...'
+														value={apiKeyValue}
+														onChange={(e) => setApiKeyValue(e.target.value)}
+													/>
+												</div>
+											</div>
+										)}
+									</div>
+
+									<div className='grid grid-cols-2 gap-3'>
+										<div>
+											<label
+												className='block text-sm font-medium mb-1.5'
+												style={{ color: "#7B8DB0" }}>
+												Test Email
+											</label>
+											<input
+												type='email'
+												className='input-dark'
+												placeholder='test@example.com'
+												value={testEmail}
+												onChange={(e) => setTestEmail(e.target.value)}
+											/>
+										</div>
+										<div>
+											<label
+												className='block text-sm font-medium mb-1.5'
+												style={{ color: "#7B8DB0" }}>
+												Test Password
+											</label>
+											<input
+												type='password'
+												className='input-dark'
+												placeholder='Test credentials'
+												value={testPassword}
+												onChange={(e) => setTestPassword(e.target.value)}
+											/>
+										</div>
+									</div>
+
+									{/* Advanced */}
+									<div
+										className='rounded-xl overflow-hidden'
+										style={{ border: "1px solid #1E2D4A" }}>
+										<button
+											onClick={() => setAdvancedOpen(!advancedOpen)}
+											className='w-full flex items-center justify-between px-4 py-3 text-sm font-medium transition-colors'
+											style={{ background: "#0F1629", color: "#7B8DB0" }}
+											onMouseEnter={(e) =>
+												((e.currentTarget as HTMLElement).style.color =
+													"#E8EEFF")
+											}
+											onMouseLeave={(e) =>
+												((e.currentTarget as HTMLElement).style.color =
+													"#7B8DB0")
+											}>
+											<div className='flex items-center gap-2'>
+												<Settings size={14} /> Advanced Settings
+											</div>
+											{advancedOpen ? (
+												<ChevronUp size={14} />
+											) : (
+												<ChevronDown size={14} />
+											)}
+										</button>
+										{advancedOpen && (
+											<div
+												className='p-4 grid grid-cols-2 gap-4'
+												style={{
+													background: "#0A0E1A",
+													borderTop: "1px solid #1E2D4A",
+												}}>
+												<div>
+													<label
+														className='block text-xs font-medium mb-1.5'
+														style={{ color: "#7B8DB0" }}>
+														Request Timeout (s)
+													</label>
+													<input
+														type='number'
+														className='input-dark'
+														value={timeout}
+														onChange={(e) => setTimeoutVal(e.target.value)}
+														min='1'
+														max='60'
+													/>
+												</div>
+												<div>
+													<label
+														className='block text-xs font-medium mb-1.5'
+														style={{ color: "#7B8DB0" }}>
+														Max Retries
+													</label>
+													<input
+														type='number'
+														className='input-dark'
+														value={maxRetries}
+														onChange={(e) => setMaxRetries(e.target.value)}
+														min='0'
+														max='5'
+													/>
+												</div>
+												{[
+													{
+														label: "Enable Security Fuzzing",
+														val: securityFuzzing,
+														set: setSecurityFuzzing,
+														desc: "Probe endpoints for injections, XSS, and auth bypass",
+													},
+													{
+														label: "Enable Self-Healing",
+														val: selfHealing,
+														set: setSelfHealing,
+														desc: "Auto-adapt test assertions on field mismatch",
+													},
+												].map((toggle) => (
+													<div
+														key={toggle.label}
+														className='col-span-2 flex items-center justify-between py-2'>
+														<div>
+															<p
+																className='text-sm font-medium'
+																style={{ color: "#E8EEFF" }}>
+																{toggle.label}
+															</p>
+															<p
+																className='text-xs'
+																style={{ color: "#4A5A78" }}>
+																{toggle.desc}
+															</p>
+														</div>
+														<button
+															onClick={() => toggle.set(!toggle.val)}
+															className='w-11 h-6 rounded-full transition-all relative'
+															style={{
+																background: toggle.val ? "#00D4FF" : "#1E2D4A",
+															}}>
+															<div
+																className='absolute top-0.5 w-5 h-5 rounded-full transition-all'
+																style={{
+																	background: "white",
+																	left: toggle.val
+																		? "calc(100% - 22px)"
+																		: "2px",
+																}}
+															/>
+														</button>
+													</div>
+												))}
+											</div>
+										)}
+									</div>
+
+									<div className='flex gap-3'>
+										<button
+											onClick={() => setStep(1)}
+											className='px-4 py-2.5 rounded-xl text-sm font-medium transition-colors'
+											style={{
+												background: "#0F1629",
+												color: "#7B8DB0",
+												border: "1px solid #1E2D4A",
+											}}>
+											← Back
+										</button>
+										<button
+											onClick={() => canProceedStep2 && setStep(3)}
+											disabled={!canProceedStep2}
+											className='btn-cyan px-6 py-2.5 text-sm font-semibold'
+											style={{ opacity: canProceedStep2 ? 1 : 0.4 }}>
+											Continue to Launch →
+										</button>
 									</div>
 								</div>
-								<ResponsiveContainer width='100%' height={200}>
-									<LineChart data={specScoreTrend}>
-										<CartesianGrid
-											strokeDasharray='3 3'
-											stroke='#1E2D4A'
-											vertical={false}
-										/>
-										<XAxis
-											dataKey='run'
-											tick={{ fill: "#4A5A78", fontSize: 11 }}
-											axisLine={false}
-											tickLine={false}
-										/>
-										<YAxis
-											domain={[40, 100]}
-											tick={{ fill: "#4A5A78", fontSize: 11 }}
-											axisLine={false}
-											tickLine={false}
-											width={30}
-										/>
-										<Tooltip content={<CustomTooltip />} />
-										<Line
-											type='monotone'
-											dataKey='score'
-											stroke='#00D4FF'
-											strokeWidth={2.5}
-											dot={{ fill: "#00D4FF", r: 4, strokeWidth: 0 }}
-											activeDot={{ r: 6, fill: "#00D4FF", strokeWidth: 0 }}
-										/>
-									</LineChart>
-								</ResponsiveContainer>
-							</div>
+							)}
+
+							{/* STEP 3 */}
+							{step === 3 && (
+								<div
+									className='rounded-2xl p-6 space-y-6'
+									style={{
+										background: "#141D35",
+										border: "1px solid #1E2D4A",
+									}}>
+									<div>
+										<h2
+											className='font-semibold mb-1'
+											style={{ color: "#E8EEFF" }}>
+											Ready to Launch
+										</h2>
+										<p className='text-sm' style={{ color: "#7B8DB0" }}>
+											Review your configuration and run the test
+										</p>
+									</div>
+
+									{/* Summary */}
+									<div
+										className='rounded-xl p-4 space-y-3'
+										style={{
+											background: "#0F1629",
+											border: "1px solid #1E2D4A",
+										}}>
+										{[
+											{
+												label: "Requirements Doc",
+												value: reqFile?.name || "—",
+												icon: File,
+												color: "#00E396",
+											},
+											{
+												label: "API Spec",
+												value: specFile?.name || "—",
+												icon: Code2,
+												color: "#00E396",
+											},
+											{
+												label: "Base URL",
+												value: baseUrl || "—",
+												icon: Link2,
+												color: "#00D4FF",
+											},
+											{
+												label: "Auth Type",
+												value:
+													authType === "none"
+														? "No Auth"
+														: authType === "bearer"
+															? "Bearer Token"
+															: authType === "basic"
+																? "Basic Auth"
+																: "API Key",
+												icon: Settings,
+												color: "#7B61FF",
+											},
+											{
+												label: "Security Fuzzing",
+												value: securityFuzzing ? "Enabled" : "Disabled",
+												icon: Zap,
+												color: securityFuzzing ? "#00E396" : "#4A5A78",
+											},
+											{
+												label: "Self-Healing",
+												value: selfHealing ? "Enabled" : "Disabled",
+												icon: Settings,
+												color: selfHealing ? "#00E396" : "#4A5A78",
+											},
+										].map((item) => (
+											<div
+												key={item.label}
+												className='flex items-center justify-between'>
+												<div className='flex items-center gap-2'>
+													<item.icon size={13} style={{ color: item.color }} />
+													<span
+														className='text-sm'
+														style={{ color: "#7B8DB0" }}>
+														{item.label}
+													</span>
+												</div>
+												<span
+													className='text-sm font-medium truncate max-w-[200px]'
+													style={{ color: "#E8EEFF" }}>
+													{item.value}
+												</span>
+											</div>
+										))}
+									</div>
+
+									<button
+										onClick={handleRun}
+										disabled={loading}
+										className='btn-cyan w-full py-4 text-base font-bold flex items-center justify-center gap-3'
+										style={{
+											background: loading
+												? "#00D4FF99"
+												: "linear-gradient(135deg, #00D4FF, #0099BB)",
+											boxShadow: loading
+												? "none"
+												: "0 0 30px rgba(0,212,255,0.25)",
+										}}>
+										{loading ? (
+											<>
+												<div className='w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin' />{" "}
+												Starting test run...
+											</>
+										) : (
+											<>
+												<Zap size={20} /> Run SpecTest
+											</>
+										)}
+									</button>
+									<p
+										className='text-center text-xs'
+										style={{ color: "#4A5A78" }}>
+										Estimated time: 2–5 minutes depending on number of endpoints
+									</p>
+
+									<button
+										onClick={() => setStep(2)}
+										className='w-full py-2 text-sm transition-colors'
+										style={{ color: "#4A5A78" }}>
+										← Edit configuration
+									</button>
+								</div>
+							)}
 						</div>
 
-						{/* Right sidebar */}
+						{/* RIGHT COLUMN */}
 						<div className='space-y-4'>
-							{/* Quick Start */}
+							{/* Agent pipeline */}
 							<div
 								className='rounded-2xl p-6'
 								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
-								<h2 className='font-semibold mb-4' style={{ color: "#E8EEFF" }}>
-									Quick Start
-								</h2>
-								<Link
-									href='/new-test'
-									className='w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold mb-5 transition-all btn-cyan'>
-									<Plus size={18} /> Run a New Test
-								</Link>
-								<div className='space-y-2'>
-									<p
-										className='text-xs font-medium mb-3'
-										style={{ color: "#4A5A78" }}>
-										RECENT ACTIVITY
-									</p>
-									{[
-										{
-											icon: CheckCircle2,
-											text: "Run #247 completed",
-											time: "2m ago",
-											color: "#00E396",
-										},
-										{
-											icon: AlertTriangle,
-											text: "2 gaps found in Auth",
-											time: "1h ago",
-											color: "#FFB547",
-										},
-										{
-											icon: Shield,
-											text: "SQL injection detected",
-											time: "1d ago",
-											color: "#FF4560",
-										},
-										{
-											icon: RefreshCw,
-											text: "Self-heal on /auth/login",
-											time: "1d ago",
-											color: "#7B61FF",
-										},
-									].map((item, i) => (
-										<div key={i} className='flex items-center gap-3 py-2'>
-											<item.icon
-												size={14}
-												style={{ color: item.color, flexShrink: 0 }}
-											/>
-											<div className='flex-1 min-w-0'>
+								<h3 className='font-semibold mb-4' style={{ color: "#E8EEFF" }}>
+									What happens next
+								</h3>
+								<div className='space-y-0'>
+									{AGENT_STEPS.map((s, i) => (
+										<div key={i} className='relative flex gap-4'>
+											{i < AGENT_STEPS.length - 1 && (
+												<div
+													className='absolute left-4 top-10 bottom-0 w-px'
+													style={{ background: "#1E2D4A" }}
+												/>
+											)}
+											<div
+												className='w-8 h-8 rounded-full flex items-center justify-center shrink-0 z-10'
+												style={{
+													background: "#0F1629",
+													border: "1px solid #1E2D4A",
+												}}>
+												<s.icon size={14} style={{ color: "#00D4FF" }} />
+											</div>
+											<div className='pb-5'>
 												<p
-													className='text-xs truncate'
+													className='text-sm font-semibold mb-0.5'
+													style={{ color: "#E8EEFF" }}>
+													{s.label}
+												</p>
+												<p
+													className='text-xs leading-relaxed'
 													style={{ color: "#7B8DB0" }}>
-													{item.text}
+													{s.desc}
 												</p>
 											</div>
-											<span
-												className='text-xs shrink-0'
-												style={{ color: "#4A5A78" }}>
-												{item.time}
-											</span>
 										</div>
 									))}
 								</div>
 							</div>
 
-							{/* Tip of the day */}
+							{/* Tips */}
 							<div
 								className='rounded-2xl p-5'
-								style={{
-									background: "rgba(0,212,255,0.05)",
-									border: "1px solid rgba(0,212,255,0.15)",
-								}}>
+								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
+								<h3
+									className='text-sm font-semibold mb-3'
+									style={{ color: "#E8EEFF" }}>
+									Tips for best results
+								</h3>
+								<ul className='space-y-2'>
+									{[
+										"Use numbered requirements (REQ-01, REQ-02...)",
+										"Include expected HTTP status codes in requirements",
+										"Ensure Swagger spec has request/response schemas",
+										"Add test credentials for auth-protected endpoints",
+									].map((tip, i) => (
+										<li
+											key={i}
+											className='flex items-start gap-2 text-xs'
+											style={{ color: "#7B8DB0" }}>
+											<span style={{ color: "#00D4FF" }}>→</span> {tip}
+										</li>
+									))}
+								</ul>
+							</div>
+
+							<div
+								className='rounded-2xl p-5'
+								style={{ background: "#141D35", border: "1px solid #1E2D4A" }}>
 								<div className='flex items-center gap-2 mb-3'>
-									<BookOpen size={14} style={{ color: "#00D4FF" }} />
-									<p
-										className='text-xs font-semibold uppercase tracking-wider'
-										style={{ color: "#00D4FF" }}>
-										Tip of the day
-									</p>
+									<Clock3 size={14} style={{ color: "#00D4FF" }} />
+									<h3
+										className='text-sm font-semibold'
+										style={{ color: "#E8EEFF" }}>
+										Run cadence
+									</h3>
 								</div>
-								<p
-									className='text-sm leading-relaxed'
-									style={{ color: "#7B8DB0" }}>
-									Use the{" "}
-									<span style={{ color: "#E8EEFF" }}>Security Fuzzing</span>{" "}
-									mode to probe every endpoint for SQL injection and XSS. Enable
-									it in Advanced Settings on your next test run.
+								<p className='text-sm leading-relaxed' style={{ color: "#7B8DB0" }}>
+									Most teams run regression checks at least once daily and after
+									every API schema change for reliable coverage.
 								</p>
-								<Link
-									href='/new-test'
-									className='inline-flex items-center gap-1 text-xs mt-3 font-medium'
-									style={{ color: "#00D4FF" }}>
-									Try it now <ChevronRight size={11} />
-								</Link>
 							</div>
 						</div>
 					</div>
+
 				</div>
 			</div>
 		</div>

@@ -53,7 +53,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               key={t.id}
               className="toast-slide-in flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl max-w-sm"
               style={{
-                background: "#141D35",
+                background: `linear-gradient(180deg, ${bg}, #141D35)`,
                 border: `1px solid ${border}`,
                 boxShadow: `0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px ${border}`,
               }}
