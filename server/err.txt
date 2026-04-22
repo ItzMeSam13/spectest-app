@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "C:\Users\pratham\Desktop\spectest-app\server\test_import.py", line 3, in <module>
+    import app.main
+  File "C:\Users\pratham\Desktop\spectest-app\server\app\main.py", line 5, in <module>
+    from app.api.routes import router
+  File "C:\Users\pratham\Desktop\spectest-app\server\app\api\routes\__init__.py", line 10, in <module>
+    from app.workers.test_runner import TestRunner
+  File "C:\Users\pratham\Desktop\spectest-app\server\app\workers\test_runner.py", line 13, in <module>
+    class TestRunner:
+    ...<251 lines>...
+            yield {"msg": "[DONE] Test suite execution finished.", "level": "INFO", "final_results": results}
+  File "C:\Users\pratham\Desktop\spectest-app\server\app\workers\test_runner.py", line 47, in TestRunner
+    async def _heal_payload(self, step: Dict[str, Any], error_msg: str, payload: Dict[str, Any]) -> HealResult:
+                                                                                                    ^^^^^^^^^^
+NameError: name 'HealResult' is not defined

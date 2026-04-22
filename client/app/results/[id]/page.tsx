@@ -287,7 +287,7 @@ export default function ResultsPage() {
         </div>
 
         {/* Advanced Mission Analytics — Glassmorphism Container */}
-        <div className="print-col print-avoid-break" style={{
+        <div className="print-analytics-board print-avoid-break" style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr 1fr",
           gap: "2rem",
@@ -418,7 +418,7 @@ export default function ResultsPage() {
             </h3>
             
             {/* Gauge Component (Half-Pie) — tracks pass rate */}
-            <div className="print-pie-chart" style={{ height: 180, width: "100%", position: "relative" }}>
+            <div className="print-gauge-chart" style={{ height: 180, width: "100%", position: "relative" }}>
                <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie

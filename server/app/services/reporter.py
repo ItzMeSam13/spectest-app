@@ -25,7 +25,13 @@ class TestResult(BaseModel):
     failure_dynamics: str = ""        # Root-cause analysis narrative
     parameter_audit: Dict[str, Any] = {}  # Headers/params actually used in the request
     security_implications: str = ""   # Any security signal detected from the response
-    requirement_match: str = ""       # Which BRD requirement this endpoint fulfils
+    requirement_match: str = ""       # Which BRD requirement this endpoint fulfills
+    # --- Healing Details ---
+    healing_trace: str = ""           # AI reasoning line
+    validation_cases: List[Dict[str, Any]] = [] # Post-fix dynamic test cases
+    original_payload: Optional[Dict[str, Any]] = None
+    error_msg: str = ""
+    healed_payload: Optional[Dict[str, Any]] = None
 
 
 class GapItem(BaseModel):
@@ -213,6 +219,8 @@ class ReporterService:
                     "technical_summary": r.technical_summary,
                     "failure_dynamics": r.failure_dynamics,
                     "parameter_audit": r.parameter_audit,
+                    "healing_trace": getattr(r, "healing_trace", ""),
+                    "validation_cases": getattr(r, "validation_cases", []),
                 }
                 for r in results
             ],
@@ -296,6 +304,18 @@ class ReporterService:
                 "recommendations": recommendations,
                 # Structured per-tab payload for dashboard
                 "tabs": tabs,
+                # New Task 3: explicit evidence logging for healed endpoints
+                "healing_evidence": [
+                    {
+                        "endpoint": r.endpoint,
+                        "healing_trace": getattr(r, "healing_trace", ""),
+                        "validation_cases": getattr(r, "validation_cases", []),
+                        "original_payload": getattr(r, "original_payload", None),
+                        "error_msg": getattr(r, "error_msg", ""),
+                        "healed_payload": getattr(r, "healed_payload", None)
+                    }
+                    for r in enriched_results if r.status == "HEALED"
+                ],
             })
             print(f"✓ Enriched run {data.run_id} saved to Firebase.")
             return True

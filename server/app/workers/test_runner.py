@@ -6,13 +6,14 @@ import os
 from typing import List, Dict, Any, AsyncGenerator, Optional
 from app.core.context import ExecutionContext
 from app.services.ingestion import IngestionService
+from app.services.healer import HealerService, HealResult
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 
 class TestRunner:
     """
     Executes a sequence of API test steps, handles variable injection,
-    streams real-time logs, and performs Gemini-driven self-healing.
+    streams real-time logs, and performs Llama 3.2-driven self-healing.
     """
     def __init__(self, run_id: str):
         self.run_id = run_id
@@ -21,8 +22,9 @@ class TestRunner:
             base_url="http://localhost:11434",
             temperature=0.1
         )
-        self.swagger_endpoints = [] # List of valid endpoints from the spec
+        self.swagger_endpoints = []  # List of valid endpoints from the spec
         self.ingest_service = IngestionService(run_id=run_id)
+        self.healer = HealerService()  # Dedicated healing service
 
     def _inject_variables(self, data: Any, vars: Dict[str, Any]) -> Any:
         """
@@ -42,37 +44,18 @@ class TestRunner:
             return {k: self._inject_variables(v, vars) for k, v in data.items()}
         return data
 
-    async def _heal_payload(self, step: Dict[str, Any], error_msg: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def _heal_payload(self, step: Dict[str, Any], error_msg: str, payload: Dict[str, Any]) -> HealResult:
         """
-        Calls Gemini to diagnose why a request failed and suggest a fixed JSON payload.
+        Delegates to HealerService which queries ChromaDB, calls Llama 3.2,
+        and returns a HealResult with healed_payload + healing_trace.
+        Returns the HealResult directly so callers can access the trace.
         """
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are an expert API Debugger. A test step failed. Diagnose the error and fix the JSON payload."),
-            ("human", (
-                "ENDPOINT: {method} {endpoint}\n"
-                "EXPECTED SCHEMA: {schema}\n"
-                "FAILED PAYLOAD: {payload}\n"
-                "ERROR MESSAGE: {error}\n\n"
-                "Provide ONLY the corrected JSON payload. Do not include triple backticks or explanations.\n"
-                "CRITICAL: Output ONLY raw JSON. No conversational text, no markdown blocks, no explanations."
-            ))
-        ])
-        
-        chain = prompt | self.llm
-        response = await chain.ainvoke({
-            "method": step.get("method"),
-            "endpoint": step.get("endpoint"),
-            "schema": json.dumps(step.get("payload_schema", {})),
-            "payload": json.dumps(payload),
-            "error": error_msg
-        })
-        
-        try:
-            # Clean possible markdown/text around JSON
-            clean_json = response.content.strip().replace("```json", "").replace("```", "")
-            return json.loads(clean_json)
-        except:
-            return payload # Fallback to original if healing fails
+        return await self.healer.heal(
+            step=step,
+            error_msg=error_msg,
+            payload=payload,
+            ingest_service=self.ingest_service,
+        )
 
     async def _heal_path_via_rag(self, failed_path: str, method: str) -> Optional[str]:
         """Queries ChromaDB to see if the failed path has a correct counterpart in the spec."""
@@ -177,7 +160,9 @@ class TestRunner:
                     "self_healed": False,
                     "status_code": 0,
                     "response_time_ms": 0,
-                    "ai_explanation": ""
+                    "ai_explanation": "",
+                    "healing_trace": "",       # Task 1: structured reasoning trace
+                    "validation_cases": [],    # Task 2: post-fix validation suite
                 }
                 
                 try:
@@ -221,13 +206,47 @@ class TestRunner:
                         
                         if response.is_error:
                             yield {"msg": f"[HEAL] Attempting payload healing with AI...", "level": "WARN"}
-                            healed_payload = await self._heal_payload(step, response.text, payload)
+                            
+                            # Capture pre-healing state
+                            test_result["original_payload"] = payload
+                            test_result["error_msg"] = response.text
+
+                            heal_result = await self._heal_payload(step, response.text, payload)
+                            healed_payload = heal_result.healed_payload
+                            
+                            # Capture post-healing state
+                            test_result["healed_payload"] = healed_payload
+
+                            # ── Task 1: stream the reasoning trace ──────────
+                            yield {
+                                "msg": f"[HEAL TRACE] {heal_result.healing_trace}",
+                                "level": "INFO",
+                            }
+
                             yield {"msg": f"[HEAL] Retrying with corrected payload...", "level": "INFO"}
                             response = await client.request(method, url, json=healed_payload, headers=headers)
                             test_result["status_code"] = response.status_code
                             if response.is_success:
                                 test_result["self_healed"] = True
                                 test_result["ai_explanation"] = "Payload automatically corrected to match API schema."
+                                test_result["healing_trace"] = heal_result.healing_trace
+
+                                # ── Task 2: generate 3 validation cases ─────
+                                yield {"msg": "[HEAL] Generating 3 validation cases for healed endpoint...", "level": "INFO"}
+                                val_cases = await self.healer.generate_validation_cases(
+                                    endpoint=endpoint,
+                                    method=method,
+                                    healed_payload=healed_payload,
+                                    ingest_service=self.ingest_service,
+                                )
+                                test_result["validation_cases"] = val_cases
+                                for i, vc in enumerate(val_cases, 1):
+                                    yield {
+                                        "msg": f"[VALIDATE] Case {i}: {vc['name']} → {vc['method']} {vc['endpoint']} (expect {vc['expected_status']})",
+                                        "level": "INFO",
+                                    }
+
+
 
                     if response.is_success:
                         test_result["passed"] = True

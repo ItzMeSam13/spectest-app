@@ -1,0 +1,85 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Restful-Booker Advanced Audit",
+    "version": "1.0.0",
+    "description": "Chained execution test for SpecTest AI"
+  },
+  "paths": {
+    "/auth": {
+      "post": {
+        "summary": "REQ-01: Generate Auth Token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "default": "admin" },
+                  "password": { "type": "string", "default": "password123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Returns a token string" }
+        }
+      }
+    },
+    "/booking": {
+      "post": {
+        "summary": "REQ-02: Create New Booking",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstname": { "type": "string" },
+                  "lastname": { "type": "string" },
+                  "totalprice": { "type": "integer" },
+                  "depositpaid": { "type": "boolean" },
+                  "bookingdates": {
+                    "type": "object",
+                    "properties": {
+                      "checkin": { "type": "string", "format": "date" },
+                      "checkout": { "type": "string", "format": "date" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Returns bookingid and booking object" }
+        }
+      }
+    },
+    "/booking/{id}": {
+      "get": {
+        "summary": "REQ-03: Retrieve Booking by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Booking details found" }
+        }
+      },
+      "put": {
+        "summary": "REQ-04: Update Booking (Requires Token)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "Cookie", "in": "header", "required": true, "schema": { "type": "string" }, "description": "token=<token_from_REQ_01>" }
+        ],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Booking" } } }
+        },
+        "responses": {
+          "200": { "description": "Update successful" }
+        }
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@ import {
 	BarChart3,
 	LayoutDashboard,
 	FileText,
+	Stethoscope,
 	type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";

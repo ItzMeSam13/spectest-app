@@ -142,12 +142,11 @@ export default function AnalyticsPage() {
     };
   }, [runs]);
 
-  // ─── Aggregation: Trend Line (Last 10 Missions) ───────────────────────────
   const chartData = useMemo(() => {
     return [...runs]
       .slice(0, 10)
       .reverse() // Chronological order
-      .map(run => {
+      .map((run, index) => {
         let dateLabel = "Unknown";
         try {
           if (run.timestamp instanceof Timestamp) {
@@ -168,11 +167,20 @@ export default function AnalyticsPage() {
         const healed = enrichedResults.filter((r: any) => r.status === "HEALED" || r.self_healed).length || run.healed || 0;
         const total = enrichedResults.length || run.total_tests || (pass + fail + healed) || 1;
 
-        const passRate = Math.min(Math.round(((pass + healed) / total) * 100), 100);
+        const derivedRate = Math.min(Math.round(((pass + healed) / total) * 100), 100);
+        let score = (run.spec_score != null && run.spec_score > 0)
+          ? Math.min(Math.round(run.spec_score), 100)
+          : derivedRate;
 
         return {
-          name: dateLabel,
-          score: passRate,
+          // Recharts bugs out on hover if XAxis names are duplicated (e.g. multiple runs on same day). Add unique suffix.
+          name: `${dateLabel} | ${index}`,
+          displayLabel: dateLabel, 
+          score,
+          pass,
+          fail,
+          healed,
+          total,
           details: `Run #${run.run_id?.slice(0, 8)}`
         };
       });
@@ -269,11 +277,11 @@ export default function AnalyticsPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="flex flex-col gap-6 pb-20">
           
-          {/* Trend Chart */}
+          {/* Top Layer - Chart */}
           <div 
-            className="lg:col-span-2 rounded-2xl p-7 border"
+            className="w-full rounded-2xl p-7 border"
             style={{ background: "#141D35", borderColor: "#1E2D4A" }}
           >
             <div className="flex justify-between items-center mb-8">
@@ -303,6 +311,7 @@ export default function AnalyticsPage() {
                     tickLine={false} 
                     axisLine={false}
                     tick={{ fill: '#4A5A78' }}
+                    tickFormatter={(val) => String(val).split(' | ')[0]}
                   />
                   <YAxis 
                     stroke="#4A5A78" 
@@ -317,14 +326,22 @@ export default function AnalyticsPage() {
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null;
                       const p = payload[0].payload;
-                      const scoreVal = p.score as number;
+                      const scoreVal = typeof p.score === 'number' ? p.score : Number(payload[0].value);
                       const col = scoreVal >= 80 ? "#00E396" : scoreVal >= 50 ? "#FFB547" : "#FF4560";
                       return (
-                        <div style={{ background: "#0A1020", border: "1px solid #1E2D4A", borderRadius: 12, padding: "12px 16px", minWidth: 170, boxShadow: "0 10px 25px rgba(0,0,0,0.5)" }}>
-                          <div style={{ color: "#7B8DB0", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", marginBottom: 8 }}>{label}</div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 6 }}>
+                        <div style={{ background: "#0A1020", border: "1px solid #1E2D4A", borderRadius: 12, padding: "12px 16px", minWidth: 190, boxShadow: "0 10px 25px rgba(0,0,0,0.5)" }}>
+                          <div style={{ color: "#7B8DB0", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", marginBottom: 8 }}>
+                            {p.displayLabel || String(label || "").split(' | ')[0]}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
                             <span style={{ fontSize: 28, fontWeight: 900, color: col }}>{scoreVal}%</span>
                             <span style={{ fontSize: 11, color: "#7B8DB0" }}>Pass Rate</span>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 10, marginBottom: 6 }}>
+                            <span style={{ color: "#00E396" }}>✓ Passed</span><span style={{ color: "#00E396", fontWeight: 700 }}>{p.pass ?? "—"}</span>
+                            <span style={{ color: "#FF4560" }}>✗ Failed</span><span style={{ color: "#FF4560", fontWeight: 700 }}>{p.fail ?? "—"}</span>
+                            <span style={{ color: "#FFB547" }}>⚡ Healed</span><span style={{ color: "#FFB547", fontWeight: 700 }}>{p.healed ?? "—"}</span>
+                            <span style={{ color: "#7B8DB0" }}>Total</span><span style={{ color: "#7B8DB0", fontWeight: 700 }}>{p.total ?? "—"}</span>
                           </div>
                           <div style={{ fontSize: 10, color: "#4A5A78", fontFamily: "JetBrains Mono, monospace", borderTop: "1px solid #1E2D4A", paddingTop: 6 }}>
                             {p.details}
@@ -348,10 +365,10 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* Side Panels */}
-          <div className="flex flex-col gap-6">
+          {/* Bottom Layer - 3 Symmetric Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* Top Risks */}
+            {/* Top Risks (Panel 1) */}
             <div 
               className="rounded-2xl p-7 border"
               style={{ background: "#141D35", borderColor: "#1E2D4A" }}
@@ -457,7 +474,6 @@ export default function AnalyticsPage() {
             </div>
 
           </div>
-
         </div>
       </main>
 

@@ -293,89 +293,148 @@ button, a, [role="button"] {
 }
 
 @media print {
+  /* ── Page Setup ──────────────────────────────────────────── */
   @page {
-    size: auto;
-    margin: 0mm;
+    size: A4 landscape;
+    margin: 12mm 14mm;
   }
+
+  /* ── Base ────────────────────────────────────────────────── */
   body {
-    background-color: #030712 !important;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
-    color: #E8EEFF;
-    padding: 10mm !important;
+    background-color: #0A0E1A !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    color: #E8EEFF !important;
+    font-size: 11pt;
+    line-height: 1.55;
   }
-  .print-hide {
-    display: none !important;
-  }
+
+  /* ── Visibility ──────────────────────────────────────────── */
+  .print-hide { display: none !important; }
+  .print-tabs-hide { display: none !important; }
+
+  /* ── Full-width wrapper ──────────────────────────────────── */
   .print-w-full {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 8mm 0 0 0 !important;
   }
-  .print-col {
-    display: block !important;
+
+  /* ── Analytics Board: 3-column side-by-side row ─────────── */
+  /* Override the CSS grid → flexbox row so charts stay horizontal */
+  .print-analytics-board {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 1rem !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    padding: 1.5rem !important;
+    margin-bottom: 2rem !important;
   }
-  .print-col > div {
-    display: block !important;
-    width: 100% !important;
+
+  /* Each panel is a fixed-width flex child */
+  .print-analytics-board > div {
+    flex: 0 0 32% !important;
+    width: 32% !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+    padding-left: 0.75rem !important;
+    text-align: center !important;
+  }
+  .print-analytics-board > div:first-child {
     border-left: none !important;
     padding-left: 0 !important;
-    margin-bottom: 3rem !important;
-    page-break-inside: avoid;
-    break-inside: avoid;
-    text-align: center;
   }
-  .print-avoid-break {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  /* Center panel headings in print */
+  .print-analytics-board h3 {
+    text-align: center !important;
   }
-  .print-enlarge-text {
-    font-size: 14pt !important;
-  }
+
+  /* ── Pie / Donut charts ──────────────────────────────────── */
   .print-pie-chart {
-    height: 260px !important;
-    width: 260px !important;
-    max-width: 260px !important;
-    max-height: 260px !important;
-    margin: 0 auto 2rem auto !important;
+    width: 200px !important;
+    height: 200px !important;
+    max-width: 200px !important;
+    max-height: 200px !important;
+    margin: 0 auto 0.75rem auto !important;
     position: relative !important;
     display: block !important;
   }
-  .print-pie-chart-half {
-    height: 180px !important;
-    width: 260px !important;
-    max-width: 260px !important;
-    max-height: 180px !important;
-    margin: 0 auto 2rem auto !important;
+
+  /* Half-gauge (Risk Assessment): taller so cy=80% gives room for the full arc */
+  .print-gauge-chart {
+    width: 200px !important;
+    height: 200px !important;
+    max-width: 200px !important;
+    max-height: 200px !important;
+    margin: 0 auto 0.5rem auto !important;
     position: relative !important;
     display: block !important;
+    overflow: visible !important;
   }
-  .print-tabs-hide { display: none !important; }
-  .print-tab-content-show { 
-    display: block !important; 
-    page-break-inside: auto; 
-    break-inside: auto; 
+
+  /* Fix the GOOD/label overlay — use fixed px instead of % so it doesn't drift in print */
+  .print-gauge-chart > div[style*="bottom"] {
+    bottom: 12px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
   }
-  .print-section-header {
-    display: block !important;
-    border-bottom: 2px solid #1E2D4A;
-    padding-bottom: 0.5rem;
-    color: #E8EEFF;
-    font-size: 18px;
-    font-weight: 800;
-    margin-top: 3rem;
-    margin-bottom: 1.5rem;
-    break-after: avoid;
-    page-break-after: avoid;
+
+  /* Recharts SVGs inherit their container's fixed dims */
+  .print-pie-chart svg,
+  .print-gauge-chart svg {
+    width: 100% !important;
+    height: 100% !important;
+    overflow: visible !important;
   }
+
+  /* ── Vitals grid ─────────────────────────────────────────── */
   .print-vitals-grid {
     display: flex !important;
+    flex-wrap: wrap !important;
     justify-content: center !important;
-    gap: 2rem !important;
+    gap: 0.75rem !important;
   }
   .print-vitals-grid > div {
-    width: max-content !important;
-    min-width: 140px;
+    min-width: 100px !important;
+    flex: 1 1 100px !important;
+  }
+
+  /* ── Page-break controls ─────────────────────────────────── */
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .print-tab-content-show {
+    display: block !important;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  /* ── Section headers (shown in print, hidden on screen) ──── */
+  .print-section-header {
+    display: block !important;
+    border-bottom: 2px solid #1E2D4A !important;
+    padding-bottom: 0.5rem !important;
+    color: #E8EEFF !important;
+    font-size: 16pt !important;
+    font-weight: 800 !important;
+    margin-top: 2.5rem !important;
+    margin-bottom: 1.25rem !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* ── Typography ──────────────────────────────────────────── */
+  .print-enlarge-text { font-size: 11pt !important; }
+
+  /* ── Prevent SVG filter/blur from printing blank ────────── */
+  [style*="backdrop-filter"],
+  [style*="backdropFilter"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 }

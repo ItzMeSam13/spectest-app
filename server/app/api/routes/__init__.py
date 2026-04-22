@@ -119,7 +119,12 @@ async def stream_test_run(run_id: str):
                     method=r["method"],
                     status=status,
                     status_code=r["status_code"],
-                    details=r["ai_explanation"]
+                    details=r["ai_explanation"],
+                    healing_trace=r.get("healing_trace", ""),
+                    validation_cases=r.get("validation_cases", []),
+                    original_payload=r.get("original_payload", None),
+                    error_msg=r.get("error_msg", ""),
+                    healed_payload=r.get("healed_payload", None)
                 ))
 
             report_data = ReportData(
