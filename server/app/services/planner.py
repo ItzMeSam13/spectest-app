@@ -49,7 +49,10 @@ def generate_test_plan(business_req_text: str, swagger_text: str) -> List[Dict[s
         "- Only output endpoints that are EXPLICITLY defined in the .json spec.\n\n"
         "RULES:\n"
         "- Step numbers must be sequential starting from 1.\n"
-        "- If an endpoint requires an ID from a previous step, use the field name in the path or payload like '{{user_id}}'.\n\n"
+        "- If an endpoint requires an ID from a previous step, use the field name in the path or payload like '{{user_id}}'.\n"
+        "- Strictly enforce Data Types: 'totalprice' MUST be an Integer, 'depositpaid' MUST be a Boolean.\n"
+        "- Strictly enforce Date Format: dates in 'bookingdates' MUST be in the format 'YYYY-MM-DD'.\n"
+        "- Do NOT add fields (like userId) that are not explicitly documented in the Swagger schema's required fields.\n\n"
         "CRITICAL: Output ONLY raw JSON. No conversational text, no markdown blocks, no explanations.\n\n"
         "{format_instructions}"
     )

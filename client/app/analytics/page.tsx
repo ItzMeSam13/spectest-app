@@ -94,6 +94,9 @@ export default function AnalyticsPage() {
       
       setRuns(runData);
       setLoading(false);
+    }, (error) => {
+      console.error("Firebase Analytics Fetch Error:", error);
+      setLoading(false);
     });
 
     return () => unsubscribe();

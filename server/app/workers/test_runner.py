@@ -44,6 +44,23 @@ class TestRunner:
             return {k: self._inject_variables(v, vars) for k, v in data.items()}
         return data
 
+    def _extract_template_vars(self, data: Any) -> set:
+        """Helper to find all required {{variable}} names in a string, list, or dict."""
+        pattern = re.compile(r"\{\{(.*?)\}\}")
+        if isinstance(data, str):
+            return set(pattern.findall(data))
+        elif isinstance(data, list):
+            res = set()
+            for item in data:
+                res.update(self._extract_template_vars(item))
+            return res
+        elif isinstance(data, dict):
+            res = set()
+            for val in data.values():
+                res.update(self._extract_template_vars(val))
+            return res
+        return set()
+
     async def _heal_payload(self, step: Dict[str, Any], error_msg: str, payload: Dict[str, Any]) -> HealResult:
         """
         Delegates to HealerService which queries ChromaDB, calls Llama 3.2,
@@ -123,6 +140,7 @@ class TestRunner:
             self.swagger_endpoints = re.findall(r'"([^"]*/[^"]*)"', swagger_text) # Simple heuristic
 
         results = []
+        failed_providers = {}  # Tracks var_name -> step_num that failed to generate it
         async with httpx.AsyncClient(timeout=30.0) as client:
             # Task 1: Pre-flight Connectivity Check
             try:
@@ -146,6 +164,24 @@ class TestRunner:
                 
                 # Task 2: Dynamic URL Injection & Sanitization
                 url = self._join_url(context.base_url, endpoint)
+                
+                # Dependency Verification
+                payload_schema = step.get("payload_schema", {})
+                required_vars = set(re.findall(r"\{\{(.*?)\}\}", endpoint))
+                required_vars.update(self._extract_template_vars(payload_schema))
+                
+                missing_deps = {var: failed_providers[var] for var in required_vars if var in failed_providers}
+                if missing_deps:
+                    failed_step = list(missing_deps.values())[0]
+                    yield {"msg": f"[WARN] Skipping Step {step_num} due to dependency failure in Step {failed_step}.", "level": "WARN"}
+                    results.append({
+                        "method": method,
+                        "endpoint": endpoint,
+                        "passed": False,
+                        "status_code": 0,
+                        "ai_explanation": f"Skipped due to dependency failure in Step {failed_step}"
+                    })
+                    continue
                 
                 # Task 3: Clean Logging
                 yield {"msg": f"[INFO] Step {step_num}: Executing {method} {endpoint}...", "level": "INFO"}
@@ -264,6 +300,8 @@ class TestRunner:
                     else:
                         yield {"msg": f"[FAIL] Step {step_num} could not be healed.", "level": "ERROR"}
                         test_result["ai_explanation"] = f"API returned {response.status_code}: {response.text[:100]}"
+                        for var_name in step.get("extract_and_save", []):
+                            failed_providers[var_name] = step_num
                         
                 except Exception as e:
                     yield {"msg": f"[CRITICAL] Connection error: {str(e)}", "level": "ERROR"}

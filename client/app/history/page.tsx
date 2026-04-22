@@ -53,6 +53,9 @@ export default function HistoryPage() {
       
       setRuns(runData);
       setLoading(false);
+    }, (error) => {
+      console.error("Firebase History Fetch Error:", error);
+      setLoading(false);
     });
 
     return () => unsubscribe();

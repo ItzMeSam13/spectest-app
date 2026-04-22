@@ -68,19 +68,28 @@ class HealerService:
                 pass
 
         # ── Step B: LLM — fix payload AND explain the change ─────────────────
+        system_base = (
+            "You are an expert API Debugger. A test step failed. "
+            "Fix the JSON payload so the request succeeds.\n"
+        )
+        if "500" in str(error_msg):
+            system_base += (
+                "CRITICAL FOR 500 ERRORS: Prioritize checking Data Types (e.g., Integer vs String) "
+                "and Date Formats (e.g., YYYY-MM-DD). Do NOT simply add new fields to the payload.\n"
+            )
+        system_base += (
+            "Then, in ONE concise sentence, describe what you changed "
+            "(e.g., 'changed userId from a string to an integer'). "
+            "Return ONLY a JSON object with two keys:\n"
+            "  \"fixed_payload\": {{ ... }}\n"
+            "  \"action_taken\":  \"<one sentence>\"\n"
+            "No markdown, no extra text."
+        )
+
         prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
-                (
-                    "You are an expert API Debugger. A test step failed. "
-                    "Fix the JSON payload so the request succeeds.\n"
-                    "Then, in ONE concise sentence, describe what you changed "
-                    "(e.g., 'changed userId from a string to an integer'). "
-                    "Return ONLY a JSON object with two keys:\n"
-                    "  \"fixed_payload\": {{ ... }}\n"
-                    "  \"action_taken\":  \"<one sentence>\"\n"
-                    "No markdown, no extra text."
-                ),
+                system_base,
             ),
             (
                 "human",
