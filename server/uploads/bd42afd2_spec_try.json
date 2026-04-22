@@ -1,0 +1,45 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "SocialPost Simple API",
+    "version": "1.0.0",
+    "description": "A simplified spec for hackathon testing"
+  },
+  "paths": {
+    "/user/1": {
+      "get": {
+        "summary": "Requirement 1: Retrieve profile for User ID 1",
+        "responses": {
+          "200": {
+            "description": "Profile information retrieved successfully"
+          }
+        }
+      }
+    },
+    "/posts": {
+      "post": {
+        "summary": "Requirement 2: Publish new blog posts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": "string" },
+                  "userId": { "type": "integer" }
+                },
+                "required": ["title", "body", "userId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Post created successfully"
+          }
+        }
+      }
+    }
+  }
+}

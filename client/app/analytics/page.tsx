@@ -30,7 +30,10 @@ import {
   Tooltip as RechartsTooltip, 
   ResponsiveContainer,
   AreaChart,
-  Area
+  Area,
+  PieChart,
+  Pie,
+  Cell
 } from "recharts";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -50,12 +53,19 @@ interface TestRun {
   run_id: string;
   timestamp: any;
   spec_score: number;
-  total_tests: number;
-  passed: number;
-  failed: number;
-  healed: number;
-  gaps: number;
+  total_tests?: number;
+  passed?: number;
+  failed?: number;
+  healed?: number;
+  gaps?: number;
   results?: TestResult[];
+  test_results?: TestResult[];
+  tabs?: {
+    results?: { entries?: TestResult[] };
+    gaps?: { entries?: any[]; total_gaps?: number };
+    security?: { overall_risk?: string; findings?: any[] };
+    recommendations?: { items?: string[] };
+  };
 }
 
 interface RiskItem {
@@ -93,18 +103,31 @@ export default function AnalyticsPage() {
   const stats = useMemo(() => {
     if (runs.length === 0) return null;
 
-    // Compute avg pass rate strictly: passed / total
-    const avgPassRate = runs.reduce((acc, run) => {
-      const total = run.total_tests || 1;
-      return acc + ((run.passed || 0) / total) * 100;
-    }, 0) / runs.length;
+    let totalGaps = 0;
+    let totalPassed = 0;
+    let totalTests = 0;
+    let totalHealed = 0;
+    let totalFailed = 0;
+    let passRateSum = 0;
 
-    const totalGaps = runs.reduce((acc, run) => acc + (run.gaps || 0), 0);
-    const totalPassed = runs.reduce((acc, run) => acc + (run.passed || 0), 0);
-    const totalTests = runs.reduce((acc, run) => acc + (run.total_tests || 0), 0);
-    const totalHealed = runs.reduce((acc, run) => acc + (run.healed || 0), 0);
-    const totalFailed = runs.reduce((acc, run) => acc + (run.failed || 0), 0);
+    runs.forEach(run => {
+      const enrichedResults = run.tabs?.results?.entries || run.results || run.test_results || [];
+      const pass = enrichedResults.filter((r: any) => (r.status || (r.passed ? "PASS" : "FAIL")) === "PASS").length || run.passed || 0;
+      const fail = enrichedResults.filter((r: any) => (r.status || (r.passed ? "PASS" : "FAIL")) === "FAIL").length || run.failed || 0;
+      const healed = enrichedResults.filter((r: any) => r.status === "HEALED" || r.self_healed).length || run.healed || 0;
+      const total = enrichedResults.length || run.total_tests || (pass + fail + healed) || 1;
+      
+      totalGaps += (run.tabs?.gaps?.total_gaps || run.gaps || 0);
+      totalPassed += pass;
+      totalFailed += fail;
+      totalHealed += healed;
+      totalTests += total;
 
+      const pRate = Math.min(Math.round(((pass + healed) / total) * 100), 100);
+      passRateSum += pRate;
+    });
+
+    const avgPassRate = passRateSum / runs.length;
     const totalErrors = totalHealed + totalFailed;
     const healingRate = totalErrors > 0 ? (totalHealed / totalErrors) * 100 : 100;
     const reliability = totalTests > 0 ? ((totalPassed + totalHealed) / totalTests) * 100 : 0;
@@ -139,9 +162,13 @@ export default function AnalyticsPage() {
           dateLabel = run.run_id?.slice(0, 4) || "Run";
         }
 
-        // Strict pass rate: (passed) / total * 100. 0 passes => 0%
-        const total = run.total_tests || 1;
-        const passRate = Math.round(((run.passed || 0) / total) * 100);
+        const enrichedResults = run.tabs?.results?.entries || run.results || run.test_results || [];
+        const pass = enrichedResults.filter((r: any) => (r.status || (r.passed ? "PASS" : "FAIL")) === "PASS").length || run.passed || 0;
+        const fail = enrichedResults.filter((r: any) => (r.status || (r.passed ? "PASS" : "FAIL")) === "FAIL").length || run.failed || 0;
+        const healed = enrichedResults.filter((r: any) => r.status === "HEALED" || r.self_healed).length || run.healed || 0;
+        const total = enrichedResults.length || run.total_tests || (pass + fail + healed) || 1;
+
+        const passRate = Math.min(Math.round(((pass + healed) / total) * 100), 100);
 
         return {
           name: dateLabel,
@@ -156,7 +183,7 @@ export default function AnalyticsPage() {
     const failureMap: Record<string, { count: number; detail: string; method: string }> = {};
 
     runs.forEach(run => {
-      const results = run.results || [];
+      const results = run.tabs?.results?.entries || run.results || run.test_results || [];
       results.forEach(res => {
         if (res.status === "FAIL" || (res.status_code && res.status_code >= 400)) {
           const key = `${res.method} ${res.endpoint}`;
@@ -373,6 +400,43 @@ export default function AnalyticsPage() {
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+
+            {/* Healing Efficiency */}
+            <div 
+              className="rounded-2xl p-7 border"
+              style={{ background: "#141D35", borderColor: "#1E2D4A" }}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-md font-bold flex items-center gap-2" style={{ color: "#E8EEFF" }}>
+                  <Zap size={18} style={{ color: "#FFB547" }} />
+                  HEALING EFFICIENCY
+                </h3>
+              </div>
+              <div className="flex flex-col items-center">
+                <div style={{ height: 160, width: "100%", position: "relative" }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Healed', value: stats?.healingRate || 0 },
+                          { name: 'Failed', value: 100 - (stats?.healingRate || 0) },
+                        ]}
+                        cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={2} dataKey="value"
+                      >
+                        <Cell fill="#FFB547" stroke="none" />
+                        <Cell fill="#FF4560" stroke="none" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", textAlign: "center" }}>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#FFB547" }}>{stats?.healingRate || 0}%</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-center mt-2 leading-relaxed" style={{ color: "#7B8DB0" }}>
+                  Percentage of identified failures successfully recovered by Llama 3.2 logic overrides.
+                </p>
               </div>
             </div>
 

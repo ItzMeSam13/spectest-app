@@ -84,7 +84,7 @@ function AnalysisCard({ r, idx }: { r: EnrichedResult; idx: number }) {
   const pa = r.parameter_audit || {}
 
   return (
-    <div style={{
+    <div className="print-avoid-break" style={{
       background: "#0D1424",
       border: `1px solid ${isFail ? "#FF456030" : isHealed ? "#FFB54730" : "#1E2D4A"}`,
       borderLeft: `4px solid ${statusBorderColor}`,
@@ -126,8 +126,7 @@ function AnalysisCard({ r, idx }: { r: EnrichedResult; idx: number }) {
       </div>
 
       {/* Expandable body */}
-      {open && (
-        <div style={{ padding: "1.25rem 1.5rem", borderTop: "1px solid #1E2D4A", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      <div className={open ? "block" : "hidden print-tab-content-show"} style={{ padding: "1.25rem 1.5rem", borderTop: "1px solid #1E2D4A", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
           {/* Requirement Match */}
           {r.requirement_match && (
@@ -141,15 +140,15 @@ function AnalysisCard({ r, idx }: { r: EnrichedResult; idx: number }) {
           {r.technical_summary && (
             <div>
               <p style={sectionLabel("#00D4FF")}>⚙️ Technical Summary</p>
-              <p style={bodyText}>{r.technical_summary}</p>
+              <p className="print-enlarge-text" style={bodyText}>{r.technical_summary}</p>
             </div>
           )}
 
           {/* Factor Analysis (failures only) */}
           {(isFail || isHealed) && r.failure_dynamics && (
-            <div style={{ background: `${statusBorderColor}0A`, border: `1px solid ${statusBorderColor}30`, borderRadius: 8, padding: "0.9rem 1rem" }}>
+            <div className="print-avoid-break" style={{ background: `${statusBorderColor}0A`, border: `1px solid ${statusBorderColor}30`, borderRadius: 8, padding: "0.9rem 1rem" }}>
               <p style={sectionLabel(statusColor)}>🔍 Factor Analysis</p>
-              <p style={bodyText}>{r.failure_dynamics}</p>
+              <p className="print-enlarge-text" style={bodyText}>{r.failure_dynamics}</p>
             </div>
           )}
 
@@ -159,7 +158,7 @@ function AnalysisCard({ r, idx }: { r: EnrichedResult; idx: number }) {
               <p style={sectionLabel("#FFB547")}>🔬 Parameter Audit</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem 1.5rem" }}>
                 {Object.entries(pa).map(([key, val]) => (
-                  <div key={key} style={{ display: "flex", gap: 8 }}>
+                  <div key={key} className="print-avoid-break" style={{ display: "flex", gap: 8 }}>
                     <span style={{ fontSize: 12, color: "#4A5A78", minWidth: 140 }}>{key}</span>
                     <span style={{ fontSize: 12, color: "#B0BFDB", fontFamily: "JetBrains Mono, monospace" }}>
                       {Array.isArray(val) ? val.join(", ") : String(val)}
@@ -172,7 +171,7 @@ function AnalysisCard({ r, idx }: { r: EnrichedResult; idx: number }) {
 
           {/* Security */}
           {r.security_implications && (
-            <div>
+            <div className="print-avoid-break">
               <p style={sectionLabel(r.security_implications.startsWith("HIGH") ? "#FF4560" : r.security_implications.startsWith("MEDIUM") ? "#FFB547" : "#00E396")}>
                 🛡️ Security Signal
               </p>
@@ -181,7 +180,6 @@ function AnalysisCard({ r, idx }: { r: EnrichedResult; idx: number }) {
           )}
 
         </div>
-      )}
     </div>
   )
 }
@@ -238,7 +236,7 @@ export default function ResultsPage() {
   const passedCount = enrichedResults.filter(r => (r.status || (r.passed ? "PASS" : "FAIL")) === "PASS").length || data.passed || 0
   const failedCount = enrichedResults.filter(r => (r.status || (r.passed ? "PASS" : "FAIL")) === "FAIL").length || data.failed || 0
   const healedCount = enrichedResults.filter(r => r.status === "HEALED" || r.self_healed).length || data.healed || 0
-  const passPercent = Math.round(((passedCount + healedCount) / totalCount) * 100)
+  const passPercent = Math.min(Math.round(((passedCount + healedCount) / totalCount) * 100), 100)
 
   const scoreColor = passPercent >= 80 ? "#00E396" : passPercent >= 50 ? "#FFB547" : "#FF4560"
   const scoreLabel = passPercent >= 80 ? "EXCELLENT" : passPercent >= 50 ? "GOOD" : "NEEDS WORK"
@@ -265,15 +263,18 @@ export default function ResultsPage() {
   ]
 
   return (
-    <div style={{ background: "#0A0E1A", minHeight: "100vh", fontFamily: "var(--font-dm-sans), sans-serif" }}>
-      <Navbar />
-      <div style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
+    <div className="min-h-screen" style={{ background: "#0A0E1A", fontFamily: "var(--font-dm-sans), sans-serif" }}>
+      <div className="print-hide">
+        <Navbar />
+      </div>
+      <div className="print-w-full" style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
           <h1 style={{ color: "#E8EEFF", margin: 0 }}>Audit Log</h1>
           <button
             onClick={() => window.print()}
+            className="print-hide"
             style={{
               display: "flex", alignItems: "center", gap: 8,
               background: "#141D35", color: "#E8EEFF",
@@ -286,9 +287,9 @@ export default function ResultsPage() {
         </div>
 
         {/* Advanced Mission Analytics — Glassmorphism Container */}
-        <div style={{
+        <div className="print-col print-avoid-break" style={{
           display: "grid",
-          gridTemplateColumns: "1.2fr 1fr",
+          gridTemplateColumns: "1fr 1fr 1fr",
           gap: "2rem",
           marginBottom: "2.5rem",
           padding: "2.5rem",
@@ -304,14 +305,13 @@ export default function ResultsPage() {
             <h3 style={{ fontSize: 13, fontWeight: 800, color: "#4A5A78", letterSpacing: "0.15em", marginBottom: "1.5rem", textTransform: "uppercase" }}>
               Mission Distribution
             </h3>
-            <div style={{ height: 260, width: "100%", position: "relative" }}>
+            <div className="print-pie-chart" style={{ height: 260, width: "100%", position: "relative" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={[
-                      { name: `Passed (${passedCount})`, value: passedCount || (passedCount + failedCount + healedCount === 0 ? 1 : 0) },
+                      { name: `Passed (${passedCount + healedCount})`, value: (passedCount + healedCount) || (passedCount + failedCount + healedCount === 0 ? 1 : 0) },
                       { name: `Failed (${failedCount})`, value: failedCount },
-                      { name: `Healed (${healedCount})`, value: healedCount },
                     ]}
                     cx="50%"
                     cy="50%"
@@ -323,7 +323,6 @@ export default function ResultsPage() {
                   >
                     <Cell fill="#00E396" stroke="none" />
                     <Cell fill="#FF4560" stroke="none" />
-                    <Cell fill="#FFB547" stroke="none" />
                   </Pie>
                   <RechartsTooltip 
                     contentStyle={{ background: "#0A1020", border: "1px solid #1E2D4A", borderRadius: 12, fontSize: 12 }}
@@ -345,9 +344,64 @@ export default function ResultsPage() {
             {/* Legend */}
             <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", marginTop: "1rem" }}>
               {[
-                { label: "Passed", color: "#00E396", count: passedCount },
+                { label: "Passed", color: "#00E396", count: passedCount + healedCount },
                 { label: "Failed", color: "#FF4560", count: failedCount },
+              ].map(item => (
+                <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: item.color }} />
+                  <span style={{ fontSize: 11, color: "#7B8DB0", fontWeight: 700 }}>{item.label} ({item.count})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Middle: AI Recovery Factor */}
+          <div style={{ borderLeft: "1px solid rgba(255,255,255,0.05)", paddingLeft: "2rem" }}>
+            <h3 style={{ fontSize: 13, fontWeight: 800, color: "#4A5A78", letterSpacing: "0.15em", marginBottom: "1.5rem", textTransform: "uppercase" }}>
+              AI Recovery Factor
+            </h3>
+            <div className="print-pie-chart" style={{ height: 260, width: "100%", position: "relative" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: `Healed (${healedCount})`, value: healedCount },
+                      { name: `Failed (${failedCount})`, value: failedCount },
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={75}
+                    outerRadius={100}
+                    paddingAngle={4}
+                    dataKey="value"
+                    animationDuration={1500}
+                  >
+                    <Cell fill="#FFB547" stroke="none" />
+                    <Cell fill="#FF4560" stroke="none" />
+                  </Pie>
+                  <RechartsTooltip 
+                    contentStyle={{ background: "#0A1020", border: "1px solid #1E2D4A", borderRadius: 12, fontSize: 12 }}
+                    itemStyle={{ color: "#E8EEFF" }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              
+              <div style={{
+                position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+                textAlign: "center", pointerEvents: "none"
+              }}>
+                <div style={{ fontSize: 42, fontWeight: 900, color: "#FFB547", lineHeight: 1 }}>
+                  {healedCount + failedCount > 0 ? Math.round((healedCount / (healedCount + failedCount)) * 100) : 0}%
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#4A5A78", letterSpacing: 2, marginTop: 4 }}>RECOVERED</div>
+              </div>
+            </div>
+            
+            {/* Legend */}
+            <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", marginTop: "1rem" }}>
+              {[
                 { label: "Healed", color: "#FFB547", count: healedCount },
+                { label: "Failed", color: "#FF4560", count: failedCount },
               ].map(item => (
                 <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: item.color }} />
@@ -364,7 +418,7 @@ export default function ResultsPage() {
             </h3>
             
             {/* Gauge Component (Half-Pie) — tracks pass rate */}
-            <div style={{ height: 180, width: "100%", position: "relative" }}>
+            <div className="print-pie-chart" style={{ height: 180, width: "100%", position: "relative" }}>
                <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -397,10 +451,10 @@ export default function ResultsPage() {
             </div>
 
             {/* Compliance Vitals */}
-            <div style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div className="print-vitals-grid" style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div style={{ padding: "12px", background: "rgba(0, 212, 255, 0.05)", borderRadius: 12, border: "1px solid rgba(0, 212, 255, 0.1)" }}>
                 <div style={{ fontSize: 10, color: "#4A5A78", fontWeight: 800, marginBottom: 4 }}>RELIABILITY</div>
-                <div style={{ fontSize: 16, fontWeight: 900, color: "#E8EEFF" }}>{Math.round(((passedCount + healedCount) / totalCount) * 100)}%</div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: "#E8EEFF" }}>{Math.min(Math.round(((passedCount + healedCount) / totalCount) * 100), 100)}%</div>
               </div>
                <div style={{ padding: "12px", background: "rgba(123, 97, 255, 0.05)", borderRadius: 12, border: "1px solid rgba(123, 97, 255, 0.1)" }}>
                 <div style={{ fontSize: 10, color: "#4A5A78", fontWeight: 800, marginBottom: 4 }}>ENDPOINTS</div>
@@ -411,7 +465,7 @@ export default function ResultsPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 0, marginBottom: "1.5rem", borderBottom: "1px solid #1E2D4A" }}>
+        <div className="print-tabs-hide" style={{ display: "flex", gap: 0, marginBottom: "1.5rem", borderBottom: "1px solid #1E2D4A" }}>
           {TABS.map(({ label, icon: Icon }, i) => (
             <button key={label}
               onClick={() => setActiveTab(i)}
@@ -430,7 +484,8 @@ export default function ResultsPage() {
         </div>
 
         {/* ─── Tab 0: Test Results ─────────────────────────────────────────── */}
-        {activeTab === 0 && (
+        <div className={activeTab === 0 ? "block" : "hidden print-tab-content-show"}>
+          <h2 className="hidden print-section-header">Test Results</h2>
           <div>
             {enrichedResults.length === 0 ? (
               <div style={{ color: "#4A5A78", textAlign: "center", padding: "3rem" }}>No results found.</div>
@@ -438,17 +493,18 @@ export default function ResultsPage() {
               enrichedResults.map((r, i) => <AnalysisCard key={i} r={r} idx={i} />)
             )}
           </div>
-        )}
+        </div>
 
         {/* ─── Tab 1: Gap Report ───────────────────────────────────────────── */}
-        {activeTab === 1 && (
+        <div className={activeTab === 1 ? "block" : "hidden print-tab-content-show"}>
+          <h2 className="hidden print-section-header">Gap Report</h2>
           <div>
             {gapEntries.length === 0 ? (
-              <div style={{ color: "#00E396", textAlign: "center", padding: "3rem", fontSize: 18 }}>
+              <div className="print-avoid-break" style={{ color: "#00E396", textAlign: "center", padding: "3rem", fontSize: 18 }}>
                 ✅ No gaps found! All requirements are covered.
               </div>
             ) : gapEntries.map((g, i) => (
-              <div key={i} style={{
+              <div key={i} className="print-avoid-break" style={{
                 background: "#0D1424", borderLeft: "4px solid #FF4560",
                 border: "1px solid #FF456030", borderRadius: 12,
                 padding: "1.25rem 1.5rem", marginBottom: "0.75rem",
@@ -463,13 +519,14 @@ export default function ResultsPage() {
               </div>
             ))}
           </div>
-        )}
+        </div>
 
         {/* ─── Tab 2: Security ─────────────────────────────────────────────── */}
-        {activeTab === 2 && (
+        <div className={activeTab === 2 ? "block" : "hidden print-tab-content-show"}>
+          <h2 className="hidden print-section-header">Security Assessments</h2>
           <div>
             {/* Risk banner */}
-            <div style={{
+            <div className="print-avoid-break" style={{
               background: overallRisk === "HIGH" ? "#FF456010" : overallRisk === "MEDIUM" ? "#FFB54710" : "#00E39610",
               border: `1px solid ${overallRisk === "HIGH" ? "#FF456040" : overallRisk === "MEDIUM" ? "#FFB54740" : "#00E39640"}`,
               borderRadius: 10, padding: "0.75rem 1.25rem", marginBottom: "1.5rem",
@@ -482,7 +539,7 @@ export default function ResultsPage() {
             </div>
 
             {securityFindings.length === 0 ? (
-              <div style={{ color: "#00E396", textAlign: "center", padding: "3rem", fontSize: 18 }}>
+              <div className="print-avoid-break" style={{ color: "#00E396", textAlign: "center", padding: "3rem", fontSize: 18 }}>
                 ✅ No security issues detected.
               </div>
             ) : securityFindings.map((s, i) => {
@@ -491,7 +548,7 @@ export default function ResultsPage() {
                 : "LOW"
               const rColor = risk === "HIGH" ? "#FF4560" : risk === "MEDIUM" ? "#FFB547" : "#00E396"
               return (
-                <div key={i} style={{
+                <div key={i} className="print-avoid-break" style={{
                   background: "#0D1424", border: `1px solid ${rColor}30`,
                   borderLeft: `4px solid ${rColor}`, borderRadius: 12,
                   padding: "1.25rem 1.5rem", marginBottom: "0.75rem",
@@ -516,10 +573,11 @@ export default function ResultsPage() {
               )
             })}
           </div>
-        )}
+        </div>
 
         {/* ─── Tab 3: Recommendations ──────────────────────────────────────── */}
-        {activeTab === 3 && (
+        <div className={activeTab === 3 ? "block" : "hidden print-tab-content-show"}>
+          <h2 className="hidden print-section-header">Recommendations</h2>
           <div>
             {recommendations.length === 0 ? (
               <div style={{ color: "#00E396", textAlign: "center", padding: "3rem" }}>
@@ -534,7 +592,7 @@ export default function ResultsPage() {
               ]
               const p = priorities[i] || priorities[3]
               return (
-                <div key={i} style={{
+                <div key={i} className="print-avoid-break" style={{
                   background: "#0D1424", border: "1px solid #1E2D4A",
                   borderLeft: `4px solid ${p.color}`, borderRadius: 12,
                   padding: "1.25rem 1.5rem", marginBottom: "0.75rem",
@@ -551,7 +609,7 @@ export default function ResultsPage() {
               )
             })}
           </div>
-        )}
+        </div>
 
       </div>
 

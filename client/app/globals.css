@@ -291,3 +291,91 @@ button, a, [role="button"] {
     text-wrap: balance;
   }
 }
+
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+  body {
+    background-color: #030712 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    color: #E8EEFF;
+    padding: 10mm !important;
+  }
+  .print-hide {
+    display: none !important;
+  }
+  .print-w-full {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .print-col {
+    display: block !important;
+  }
+  .print-col > div {
+    display: block !important;
+    width: 100% !important;
+    border-left: none !important;
+    padding-left: 0 !important;
+    margin-bottom: 3rem !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    text-align: center;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-enlarge-text {
+    font-size: 14pt !important;
+  }
+  .print-pie-chart {
+    height: 260px !important;
+    width: 260px !important;
+    max-width: 260px !important;
+    max-height: 260px !important;
+    margin: 0 auto 2rem auto !important;
+    position: relative !important;
+    display: block !important;
+  }
+  .print-pie-chart-half {
+    height: 180px !important;
+    width: 260px !important;
+    max-width: 260px !important;
+    max-height: 180px !important;
+    margin: 0 auto 2rem auto !important;
+    position: relative !important;
+    display: block !important;
+  }
+  .print-tabs-hide { display: none !important; }
+  .print-tab-content-show { 
+    display: block !important; 
+    page-break-inside: auto; 
+    break-inside: auto; 
+  }
+  .print-section-header {
+    display: block !important;
+    border-bottom: 2px solid #1E2D4A;
+    padding-bottom: 0.5rem;
+    color: #E8EEFF;
+    font-size: 18px;
+    font-weight: 800;
+    margin-top: 3rem;
+    margin-bottom: 1.5rem;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .print-vitals-grid {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 2rem !important;
+  }
+  .print-vitals-grid > div {
+    width: max-content !important;
+    min-width: 140px;
+  }
+}

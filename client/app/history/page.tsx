@@ -150,7 +150,7 @@ export default function HistoryPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {runs.map((run) => {
-              const passRate = Math.round(((run.passed || 0) / (run.total_tests || 1)) * 100);
+              const passRate = Math.min(Math.round((((run.passed || 0) + (run.healed || 0)) / (run.total_tests || 1)) * 100), 100);
               const colors = getScoreColor(passRate);
               return (
                 <div 
